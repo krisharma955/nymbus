@@ -82,3 +82,4 @@ Nymbus uses an architectural spatial ledger design language. Inspired by Dieter 
 | F0 | Visual Direction | The Spatial Ledger (Option 1) | Space/Planets, Vibe-Coded Purple/Fuchsia Crystals, Cluttered Gauges | 31 Oct 2026 |
 | F0 | Background Technology | Three.js 3D Isometric Drafting Grid Plane | Prismatic Particle Clouds, Undulating Waves, 3D Planets | 31 Oct 2026 |
 | F0 | Spatial Budget | Strict 2-Viewport Architectural Layout | Infinite Scrolling Templates, Single-Viewport Squeeze | 31 Oct 2026 |
+| F0 | Workspace Architecture | Option 3: The Integrated Forensic Stream | Option 1: Dual-Track Terminal, Option 2: Modular Canvas Ledger | 31 Oct 2026 |

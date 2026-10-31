@@ -65,10 +65,6 @@ public class VerificationAgent {
 
                     Classify the support type:
                     - "SUPPORTS", "CONTRADICTS", or "CONTEXTUALIZES"
-<<<<<<< HEAD
-
-                    Return ONLY a JSON object conforming to:
-=======
                     
                     DYNAMIC CONFIDENCE SCORING RUBRIC (CRITICAL):
                     You must calculate and assign an authentic, unrounded confidence score between 0.00 and 1.00 based on evidential strength:
@@ -81,7 +77,6 @@ public class VerificationAgent {
                     Do NOT hardcode standard rounded numbers (such as 0.90, 0.95, or 1.00). Calculate and output the exact granular decimal reflecting your actual assessment (e.g. 0.87, 0.74, 0.92, 0.46, etc.).
                     
                     Return ONLY a JSON object conforming strictly to:
->>>>>>> a692773 (rag, user documents & r2 storage: phase 3)
                     {
                       "status": "VERIFIED" | "REJECTED" | "INCONCLUSIVE",
                       "supportType": "SUPPORTS" | "CONTRADICTS" | "CONTEXTUALIZES",

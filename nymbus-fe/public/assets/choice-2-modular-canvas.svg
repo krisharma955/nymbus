@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" style="background:#090A0D; font-family:'Geist Mono', monospace, -apple-system, sans-serif;">
+  <defs>
+    <filter id="glow2" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Drafting Grid Background -->
+  <pattern id="gridPattern2" width="30" height="30" patternUnits="userSpaceOnUse">
+    <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#161A22" stroke-width="0.8"/>
+  </pattern>
+  <rect width="1200" height="675" fill="url(#gridPattern2)" opacity="0.6"/>
+
+  <!-- APP SHELL HEADER -->
+  <rect x="0" y="0" width="1200" height="48" fill="#0C0E14" stroke="#1C202A" stroke-width="1"/>
+  <text x="24" y="30" fill="#F8FAFC" font-size="14" font-weight="800" letter-spacing="2">NYMBUS</text>
+  <text x="100" y="30" fill="#64748B" font-size="11">// MODULAR CANVAS LEDGER</text>
+  
+  <g transform="translate(1000, 14)">
+    <rect x="0" y="0" width="175" height="22" rx="2" fill="#13161E" stroke="#1C202A" stroke-width="1"/>
+    <circle cx="12" cy="11" r="3" fill="#D4A373"/>
+    <text x="24" y="15" fill="#94A3B8" font-size="10">TOKEN CONSUMPTION: 4.2K</text>
+  </g>
+
+  <!-- ================= LEFT SIDEBAR (CATEGORIZED DOSSIERS) ================= -->
+  <rect x="0" y="48" width="260" height="627" fill="#0A0C11" stroke="#1C202A" stroke-width="1"/>
+  
+  <g transform="translate(16, 64)">
+    <rect x="0" y="0" width="228" height="34" rx="2" fill="#F8FAFC"/>
+    <text x="50" y="22" fill="#090A0D" font-size="11" font-weight="800">+ NEW INQUEST</text>
+  </g>
+
+  <text x="18" y="130" fill="#64748B" font-size="9" font-weight="700" letter-spacing="1">RESEARCH DOMAINS</text>
+
+  <!-- Folder 1: High Energy Physics -->
+  <g transform="translate(16, 145)">
+    <rect x="0" y="0" width="228" height="85" rx="2" fill="#12151D" stroke="#D4A373" stroke-width="1"/>
+    <text x="12" y="20" fill="#D4A373" font-size="10" font-weight="700">▾ ENERGY &amp; SUPERCONDUCTIVITY</text>
+    
+    <rect x="8" y="32" width="212" height="22" rx="2" fill="rgba(212,163,115,0.15)"/>
+    <text x="16" y="47" fill="#F8FAFC" font-size="10" font-weight="600">SPARC Tokamak 20.1T Coil</text>
+    <circle cx="195" cy="43" r="3" fill="#D4A373"/>
+
+    <text x="16" y="72" fill="#94A3B8" font-size="10">ITER Blanket Tritium Ratio</text>
+  </g>
+
+  <!-- Folder 2: Quantum Computing -->
+  <g transform="translate(16, 245)">
+    <rect x="0" y="0" width="228" height="60" rx="2" fill="#0C0E14" stroke="#1C202A" stroke-width="1"/>
+    <text x="12" y="20" fill="#94A3B8" font-size="10" font-weight="600">▸ QUANTUM ERROR MITIGATION</text>
+    <text x="12" y="42" fill="#64748B" font-size="9">Surface-17 Stabilizer codes</text>
+  </g>
+
+  <!-- Folder 3: Bio-Genomics -->
+  <g transform="translate(16, 320)">
+    <rect x="0" y="0" width="228" height="60" rx="2" fill="#0C0E14" stroke="#1C202A" stroke-width="1"/>
+    <text x="12" y="20" fill="#94A3B8" font-size="10" font-weight="600">▸ SYNTHETIC BIOLOGY &amp; CAS12</text>
+    <text x="12" y="42" fill="#64748B" font-size="9">Off-target indel rates</text>
+  </g>
+
+  <!-- ================= MIDDLE MODULAR WORKSPACE ================= -->
+
+  <!-- TOP 3D ISOMETRIC TASK PROGRESS RIBBON (Width 904) -->
+  <g transform="translate(276, 64)">
+    <rect x="0" y="0" width="904" height="110" rx="2" fill="#0E1118" stroke="#D4A373" stroke-width="1"/>
+    
+    <text x="16" y="22" fill="#D4A373" font-size="10" font-weight="700" letter-spacing="1">ORCHESTRATED SUBTASK DAG &amp; PIPELINE PROGRESS // 3/4 NODES COMPLETE</text>
+    
+    <!-- Micro Isometric DAG Wireframe Cards -->
+    <!-- Card 1 -->
+    <g transform="translate(16, 36)">
+      <polygon points="0,20 60,0 160,10 100,30" fill="#131722" stroke="#10B981" stroke-width="1"/>
+      <text x="35" y="18" fill="#10B981" font-size="8" font-weight="700">SUBTASK 01</text>
+      <text x="35" y="26" fill="#F8FAFC" font-size="8">Decomposition ✓</text>
+    </g>
+
+    <!-- Vector Flow Line -->
+    <line x1="180" y1="52" x2="230" y2="52" stroke="#10B981" stroke-width="1.5"/>
+
+    <!-- Card 2 -->
+    <g transform="translate(235, 36)">
+      <polygon points="0,20 60,0 160,10 100,30" fill="#131722" stroke="#10B981" stroke-width="1"/>
+      <text x="35" y="18" fill="#10B981" font-size="8" font-weight="700">SUBTASK 02</text>
+      <text x="35" y="26" fill="#F8FAFC" font-size="8">Passage Search ✓</text>
+    </g>
+
+    <!-- Vector Flow Line -->
+    <line x1="400" y1="52" x2="450" y2="52" stroke="#D4A373" stroke-width="2"/>
+
+    <!-- Card 3 (Active) -->
+    <g transform="translate(455, 32)">
+      <polygon points="0,22 65,0 175,12 110,34" fill="#1A1F2C" stroke="#D4A373" stroke-width="2"/>
+      <circle cx="20" cy="20" r="4" fill="#D4A373" filter="url(#glow2)"/>
+      <text x="35" y="16" fill="#D4A373" font-size="9" font-weight="800">SUBTASK 03 [ACTIVE]</text>
+      <text x="35" y="26" fill="#F8FAFC" font-size="8">NLI Entailment Gate · 98.4%</text>
+    </g>
+
+    <!-- Vector Flow Line -->
+    <line x1="635" y1="52" x2="685" y2="52" stroke="#334155" stroke-width="1" stroke-dasharray="2 2"/>
+
+    <!-- Card 4 (Pending) -->
+    <g transform="translate(690, 36)">
+      <polygon points="0,20 60,0 160,10 100,30" fill="#0C0E14" stroke="#1C202A" stroke-width="1"/>
+      <text x="35" y="18" fill="#64748B" font-size="8">SUBTASK 04</text>
+      <text x="35" y="26" fill="#475569" font-size="8">Dossier Synthesis</text>
+    </g>
+  </g>
+
+  <!-- STACKED DOSSIER DISCOURSE CARDS (Width 904) -->
+  <g transform="translate(276, 190)">
+    
+    <!-- User Inquest Card -->
+    <rect x="0" y="0" width="904" height="60" rx="2" fill="#0E1118" stroke="#1C202A" stroke-width="1"/>
+    <text x="20" y="24" fill="#64748B" font-size="9" font-weight="700">INQUEST QUERY #492</text>
+    <text x="20" y="44" fill="#F8FAFC" font-size="12" font-weight="600">Investigate the stress and quench safety margin of SPARC high-field REBCO superconducting magnets.</text>
+    <rect x="800" y="14" width="85" height="20" rx="2" fill="#161B26"/>
+    <text x="812" y="28" fill="#94A3B8" font-size="9">15:20 UTC</text>
+
+    <!-- Agent Tool Action Accordion -->
+    <rect x="0" y="72" width="904" height="42" rx="2" fill="#0A0C11" stroke="#1C202A" stroke-width="1"/>
+    <text x="20" y="97" fill="#D4A373" font-size="10" font-weight="700">▸ TOOL EXECUTION: Tavily Corpus Retriever (Retrieved 4 verified scientific passages · 840ms)</text>
+    <text x="810" y="97" fill="#10B981" font-size="9" font-weight="700">VERIFIED PASS</text>
+
+    <!-- Synthesized Findings Dossier Card -->
+    <rect x="0" y="126" width="904" height="220" rx="2" fill="#11141C" stroke="#D4A373" stroke-width="1"/>
+    <rect x="0" y="126" width="904" height="32" fill="rgba(212,163,115,0.08)"/>
+    <text x="20" y="147" fill="#D4A373" font-size="11" font-weight="800">SYNTHESIZED SCIENTIFIC VERDICT · IMMUTABLE CITATION COMMIT</text>
+    
+    <text x="20" y="180" fill="#F8FAFC" font-size="12" font-weight="500">
+      The SPARC toroidal field model coil sustained 20.1 Tesla central magnetic field with no quench degradation.
+    </text>
+    
+    <!-- Inline Citation Badge -->
+    <rect x="20" y="200" width="160" height="22" rx="2" fill="#1A1F2B" stroke="#D4A373" stroke-width="1"/>
+    <text x="30" y="215" fill="#D4A373" font-size="10" font-weight="700">[1] § 14.2 · NATURE ENERGY</text>
+
+    <text x="190" y="215" fill="#94A3B8" font-size="11">
+      Cryogenic testing validated non-insulated winding stability at 18.5 kA excitation.
+    </text>
+
+    <rect x="20" y="235" width="864" height="54" rx="2" fill="#090A0D" stroke="#1C202A" stroke-width="1"/>
+    <text x="36" y="255" fill="#D4A373" font-size="10" font-weight="600">"Central field exceeded 20.1 Tesla at operating current 18.5 kA under vacuum conditions."</text>
+    <text x="36" y="275" fill="#64748B" font-size="9">Source: Nature Energy 2025 · Entailment: 98.4% · SHA-256 Digest Verified</text>
+    
+    <text x="20" y="325" fill="#64748B" font-size="9">AUDIT LOG: Bound to immutable dossier #492 by ReportAgent</text>
+  </g>
+
+  <!-- BOTTOM PROMPT CONSOLE -->
+  <g transform="translate(276, 560)">
+    <rect x="0" y="0" width="904" height="95" rx="2" fill="#0C0E14" stroke="#1C202A" stroke-width="1"/>
+    <text x="24" y="36" fill="#4B5563" font-size="12">Decompose new empirical hypothesis or question...</text>
+    
+    <rect x="740" y="45" width="144" height="34" rx="2" fill="#F8FAFC"/>
+    <text x="760" y="67" fill="#090A0D" font-size="11" font-weight="800">EXECUTE INQUEST</text>
+  </g>
+</svg>
