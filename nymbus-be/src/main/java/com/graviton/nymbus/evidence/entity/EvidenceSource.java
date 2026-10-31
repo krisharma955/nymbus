@@ -1,5 +1,6 @@
 package com.graviton.nymbus.evidence.entity;
 
+import com.graviton.nymbus.document.entity.DocumentChunk;
 import com.graviton.nymbus.source.entity.Source;
 import jakarta.persistence.*;
 import lombok.*;
@@ -30,6 +31,10 @@ public class EvidenceSource {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "source_id", nullable = false)
     private Source source;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "document_chunk_id")
+    private DocumentChunk documentChunk;
 
     @Column(name = "source_locator", columnDefinition = "TEXT")
     private String sourceLocator;

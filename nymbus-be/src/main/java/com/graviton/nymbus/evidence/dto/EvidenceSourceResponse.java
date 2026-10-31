@@ -10,6 +10,7 @@ import java.util.UUID;
 public record EvidenceSourceResponse(
         UUID id,
         UUID evidenceId,
+        UUID documentChunkId,
         SourceResponse source,
         String sourceLocator,
         SupportType supportType,
@@ -21,6 +22,7 @@ public record EvidenceSourceResponse(
         return new EvidenceSourceResponse(
                 es.getId(),
                 es.getEvidence() != null ? es.getEvidence().getId() : null,
+                es.getDocumentChunk() != null ? es.getDocumentChunk().getId() : null,
                 es.getSource() != null ? SourceResponse.fromEntity(es.getSource()) : null,
                 es.getSourceLocator(),
                 es.getSupportType(),

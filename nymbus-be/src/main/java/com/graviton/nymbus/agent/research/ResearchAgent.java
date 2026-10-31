@@ -29,21 +29,38 @@ public class ResearchAgent {
     ) {}
 
     public ResearchExecutionResult executeResearchWithAudit(String subTaskTitle, String subTaskDescription, String overallPrompt) {
-        log.info("ResearchAgent starting research on: '{}'", subTaskTitle);
+        return executeResearchWithAudit(subTaskTitle, subTaskDescription, overallPrompt, List.of());
+    }
+
+    public ResearchExecutionResult executeResearchWithAudit(
+            String subTaskTitle,
+            String subTaskDescription,
+            String overallPrompt,
+            List<SearchResult> additionalSources) {
+
+        log.info("ResearchAgent starting research on: '{}' with {} private document sources",
+                subTaskTitle, additionalSources != null ? additionalSources.size() : 0);
 
         List<String> queries = List.of(subTaskTitle);
         long searchStart = System.currentTimeMillis();
-        List<SearchResult> searchResults = webSearchTool.search(subTaskTitle, 4);
+        List<SearchResult> webResults = webSearchTool.search(subTaskTitle, 4);
         long searchDuration = System.currentTimeMillis() - searchStart;
+
+        List<SearchResult> combinedResults = new ArrayList<>();
+        if (additionalSources != null) {
+            combinedResults.addAll(additionalSources);
+        }
+        if (webResults != null) {
+            combinedResults.addAll(webResults);
+        }
 
         ResearchOutput output;
         try {
             String systemPrompt = """
                     You are the Research Agent in the Nymbus Research Platform.
-                    Your role is to investigate external search results for a specific subtask, extract verified facts with exact verbatim excerpts and source URLs, and summarize the key findings.
-
-                    CRITICAL REQUIREMENT: For each finding, the "excerpt" field MUST be copied VERBATIM from the snippet in the Search Results. Never paraphrase or fabricate the excerpt, as it will be rejected by automated programmatic verification.
-
+                    Your role is to investigate search results and internal document passages for a specific subtask, extract verified facts with exact verbatim excerpts and source URLs, and summarize the key findings.
+                    
+                    CRITICAL REQUIREMENT: For each finding, the "excerpt" field MUST be copied VERBATIM from the snippet in the Search Results / Document Passages. Never paraphrase or fabricate the excerpt, as it will be rejected by automated programmatic verification.
                     Return ONLY a JSON object conforming to:
                     {
                       "summary": "Concise paragraph synthesizing the subtask research",
@@ -62,8 +79,8 @@ public class ResearchAgent {
             StringBuilder userMessage = new StringBuilder();
             userMessage.append("SubTask: ").append(subTaskTitle).append("\n");
             userMessage.append("Objective: ").append(subTaskDescription).append("\n\n");
-            userMessage.append("Search Results:\n");
-            for (SearchResult r : searchResults) {
+            userMessage.append("Search Results & Document Passages:\n");
+            for (SearchResult r : combinedResults) {
                 userMessage.append("- Title: ").append(r.title()).append("\n");
                 userMessage.append("  URL: ").append(r.url()).append("\n");
                 userMessage.append("  Snippet: ").append(r.content()).append("\n\n");
@@ -78,14 +95,14 @@ public class ResearchAgent {
             if (responseContent != null && !responseContent.isBlank()) {
                 String cleanJson = extractJson(responseContent);
                 output = objectMapper.readValue(cleanJson, ResearchOutput.class);
-                return new ResearchExecutionResult(output, searchResults, searchDuration);
+                return new ResearchExecutionResult(output, combinedResults, searchDuration);
             }
         } catch (Exception e) {
-            log.warn("LLM call failed in ResearchAgent: {}. Generating structured synthesis from search results.", e.getMessage());
+            log.warn("LLM call failed in ResearchAgent: {}. Generating structured synthesis from results.", e.getMessage());
         }
 
-        output = createFallbackOutput(subTaskTitle, searchResults, queries);
-        return new ResearchExecutionResult(output, searchResults, searchDuration);
+        output = createFallbackOutput(subTaskTitle, combinedResults, queries);
+        return new ResearchExecutionResult(output, combinedResults, searchDuration);
     }
 
     public ResearchOutput executeResearch(String subTaskTitle, String subTaskDescription, String overallPrompt) {

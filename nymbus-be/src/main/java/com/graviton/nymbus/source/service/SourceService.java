@@ -29,6 +29,37 @@ public class SourceService {
     }
 
     @Transactional
+    public Source createOrGetUserDocumentSource(UUID researchTaskId, com.graviton.nymbus.document.entity.Document document, com.graviton.nymbus.document.entity.DocumentChunk chunk) {
+        ResearchTask task = researchTaskRepository.findById(researchTaskId).orElseThrow();
+        String docUrl = "doc://" + document.getId() + "/pages/" + (chunk.getPageNumber() != null ? chunk.getPageNumber() : 1);
+        String urlHash = canonicalUrlService.sha256Hex(docUrl);
+
+        Optional<Source> existing = sourceRepository.findByResearchTaskIdAndCanonicalUrlHash(researchTaskId, urlHash);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        String pageInfo = chunk.getPageNumber() != null ? " (Page " + chunk.getPageNumber() + ")" : "";
+        Source source = Source.builder()
+                .researchTask(task)
+                .document(document)
+                .url(docUrl)
+                .canonicalUrlHash(urlHash)
+                .title(document.getFileName() + pageInfo)
+                .domain("user-document")
+                .sourceType(SourceType.USER_DOCUMENT)
+                .cleanedText(chunk.getContent())
+                .rawMetadata(Map.of(
+                        "documentId", document.getId(),
+                        "chunkId", chunk.getId(),
+                        "fileName", document.getFileName()
+                ))
+                .build();
+
+        return sourceRepository.save(source);
+    }
+
+    @Transactional
     public Source getOrCreateSource(UUID researchTaskId, String rawUrl, String title, String rawContent, Map<String, Object> metadata) {
         ResearchTask task = researchTaskRepository.findById(researchTaskId).orElseThrow();
 

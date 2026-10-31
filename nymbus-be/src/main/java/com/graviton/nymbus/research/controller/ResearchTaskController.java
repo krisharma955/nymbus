@@ -78,7 +78,7 @@ public class ResearchTaskController {
         return ResponseEntity.ok(events);
     }
 
-    @GetMapping(value = "/{taskId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @GetMapping(value = {"/{taskId}/stream", "/{taskId}/events/stream"}, produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamEvents(
             @PathVariable UUID taskId,
             @RequestHeader(value = "Last-Event-ID", required = false) UUID lastEventIdHeader,
