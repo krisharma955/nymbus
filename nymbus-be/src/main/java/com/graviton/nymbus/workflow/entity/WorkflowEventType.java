@@ -1,0 +1,17 @@
+package com.graviton.nymbus.workflow.entity;
+
+public enum WorkflowEventType {
+    TASK_STARTED,
+    PLAN_CREATED,
+    SUBTASK_STARTED,
+    SUBTASK_COMPLETED,
+    SOURCE_FOUND,
+    CLAIM_EXTRACTED,
+    CLAIM_VERIFIED,
+    CLAIM_REJECTED,
+    RE_RESEARCH_TRIGGERED,
+    REPORT_GENERATED,
+    TASK_COMPLETED,
+    TASK_FAILED,
+    RETRY_SCHEDULED
+}
