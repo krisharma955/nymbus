@@ -703,6 +703,30 @@ function ChatWorkspaceContent() {
                   )}
                 </div>
 
+                {/* 2.5 AI Response Banner */}
+                <div className="flex items-center justify-between text-xs font-mono text-[#64748B] pt-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#D4A373] shadow-[0_0_8px_#D4A373] animate-pulse" />
+                    <span className="text-[#F8FAFC] font-semibold tracking-wider uppercase flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#D4A373]" />
+                      Nymbus Research Intelligence
+                    </span>
+                    <span className="text-slate-600">·</span>
+                    <span className="text-[#D4A373] font-medium text-[11px]">
+                      {activeReport ? "Verified Dossier" : isExecuting ? "Synthesizing Report" : "Execution Finished"}
+                    </span>
+                  </div>
+                  <span suppressHydrationWarning className="text-[11px] text-slate-400">
+                    {isMounted && activeReport?.completedAt
+                      ? `Synthesized at ${new Date(activeReport.completedAt).toLocaleTimeString()}`
+                      : isMounted && activeTask.completedAt
+                      ? `Completed at ${new Date(activeTask.completedAt).toLocaleTimeString()}`
+                      : isExecuting
+                      ? "Swarm actively executing..."
+                      : ""}
+                  </span>
+                </div>
+
                 {/* 3. Navigation Tabs */}
                 <div className="flex items-center gap-2 border-b border-[#1C202A] pb-2 text-xs font-mono">
                   <button
@@ -751,20 +775,92 @@ function ChatWorkspaceContent() {
                       onCitationClick={handleCitationClick}
                     />
                   ) : isExecuting ? (
-                    <div className="p-10 border border-[#1C202A] rounded-xl bg-[#090A0D] text-center space-y-3">
-                      <div className="flex items-center justify-center">
-                        <Clock className="w-6 h-6 text-[#D4A373] animate-spin" />
+                    <div className="p-8 sm:p-10 border border-[#D4A373]/30 rounded-2xl bg-gradient-to-b from-[#11151F] to-[#0A0D14] space-y-6 shadow-xl relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-64 h-64 bg-[#D4A373]/5 rounded-full blur-3xl pointer-events-none" />
+                      
+                      <div className="flex flex-col items-center justify-center text-center space-y-3">
+                        <div className="relative">
+                          <div className="w-12 h-12 rounded-2xl bg-[#D4A373]/10 border border-[#D4A373]/30 flex items-center justify-center text-[#D4A373]">
+                            <Clock className="w-6 h-6 text-[#D4A373] animate-spin" />
+                          </div>
+                          <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0A0D14] animate-ping" />
+                        </div>
+                        <div className="space-y-1">
+                          <h3 className="text-base sm:text-lg font-bold text-[#F8FAFC]">
+                            Autonomous Multi-Agent Swarm In Progress
+                          </h3>
+                          <p className="text-xs text-slate-400 max-w-lg mx-auto leading-relaxed">
+                            Orchestrator decomposing subtasks, querying live web indexes, isolating verbatim source passages, and compiling cryptographic citation proofs.
+                          </p>
+                        </div>
                       </div>
-                      <h3 className="text-sm font-semibold text-[#F8FAFC]">
-                        Agents Are Actively Synthesizing Report...
+
+                      {/* Swarm Stage Pills */}
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-2 text-xs font-mono">
+                        <div className="p-3 rounded-xl bg-[#131722] border border-sky-500/30 text-sky-300 flex items-center gap-2.5">
+                          <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+                          <span className="truncate">1. Decomposition</span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-[#131722] border border-[#D4A373]/30 text-[#D4A373] flex items-center gap-2.5">
+                          <span className="w-2 h-2 rounded-full bg-[#D4A373] animate-pulse" />
+                          <span className="truncate">2. Evidence Crawl</span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-[#131722] border border-amber-500/30 text-amber-300 flex items-center gap-2.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                          <span className="truncate">3. NLI Verification</span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-[#131722] border border-emerald-500/30 text-emerald-300 flex items-center gap-2.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          <span className="truncate">4. Dossier Synthesis</span>
+                        </div>
+                      </div>
+
+                      {/* Subtask Status Pill */}
+                      {subtasks.length > 0 && (
+                        <div className="flex items-center justify-between text-xs font-mono text-slate-400 pt-2 border-t border-[#1C202A]">
+                          <span>
+                            Progress: {subtasks.filter((s) => s.status === "COMPLETED").length} of {subtasks.length} subtasks completed
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setTraceExpanded(true)}
+                            className="text-[#D4A373] hover:underline cursor-pointer"
+                          >
+                            Inspect live DAG &rarr;
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : activeTask.status === "FAILED" ? (
+                    <div className="p-8 border border-rose-900/50 rounded-2xl bg-rose-950/20 text-center space-y-3">
+                      <div className="w-10 h-10 mx-auto rounded-xl bg-rose-950/40 border border-rose-800/50 flex items-center justify-center text-rose-400">
+                        <AlertCircle className="w-5 h-5" />
+                      </div>
+                      <h3 className="text-sm font-semibold text-rose-200">
+                        Inquest Execution Failed
                       </h3>
-                      <p className="text-xs text-slate-400 max-w-md mx-auto">
-                        Executing web searches, isolating verbatim passages, running NLI entailment gates, and formatting structured sections with citations.
+                      <p className="text-xs text-rose-300/80 max-w-md mx-auto font-mono">
+                        {activeTask.failureReason || "The execution encountered an unexpected error."}
                       </p>
                     </div>
                   ) : (
-                    <div className="p-10 border border-[#1C202A] rounded-xl bg-[#090A0D] text-center text-xs text-slate-400 font-mono">
-                      No dossier compiled yet for this inquiry.
+                    <div className="p-10 border border-[#1C202A] rounded-2xl bg-[#090A0D] text-center space-y-3">
+                      <div className="w-10 h-10 mx-auto rounded-xl bg-[#141822] border border-[#1C202A] flex items-center justify-center text-slate-400">
+                        <FileText className="w-5 h-5 text-[#D4A373]" />
+                      </div>
+                      <h4 className="text-sm font-semibold text-[#F8FAFC]">No Dossier Generated Yet</h4>
+                      <p className="text-xs text-slate-400 max-w-md mx-auto font-mono">
+                        This inquiry completed with {subtasks.length} subtask(s). View the timeline tab or source ledger to explore the extracted findings.
+                      </p>
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("timeline" as any)}
+                          className="px-3.5 py-1.5 rounded-lg bg-[#141822] hover:bg-[#1A202C] text-[#D4A373] border border-[#D4A373]/30 text-xs font-mono transition-colors cursor-pointer"
+                        >
+                          View Subtask Timeline &rarr;
+                        </button>
+                      </div>
                     </div>
                   )
                 )}
