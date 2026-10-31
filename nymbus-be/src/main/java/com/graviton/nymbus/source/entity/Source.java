@@ -1,5 +1,6 @@
 package com.graviton.nymbus.source.entity;
 
+import com.graviton.nymbus.document.entity.Document;
 import com.graviton.nymbus.research.entity.ResearchTask;
 import jakarta.persistence.*;
 import lombok.*;
@@ -28,6 +29,10 @@ public class Source {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "research_task_id", nullable = false)
     private ResearchTask researchTask;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "document_id")
+    private Document document;
 
     @Column(columnDefinition = "TEXT")
     private String url;

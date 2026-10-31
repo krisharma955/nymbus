@@ -66,6 +66,19 @@ public class EvidenceService {
             String claimText,
             String supportingPassage,
             String locator) {
+        return createAndVerifyEvidence(task, researchExecution, verificationExecution, source, null, claimText, supportingPassage, locator);
+    }
+
+    @Transactional
+    public Evidence createAndVerifyEvidence(
+            ResearchTask task,
+            AgentExecution researchExecution,
+            AgentExecution verificationExecution,
+            Source source,
+            com.graviton.nymbus.document.entity.DocumentChunk chunk,
+            String claimText,
+            String supportingPassage,
+            String locator) {
 
         // 1. Create Evidence in NOT_VERIFIED status
         Evidence evidence = Evidence.builder()
@@ -90,6 +103,7 @@ public class EvidenceService {
         EvidenceSource es = EvidenceSource.builder()
                 .evidence(evidence)
                 .source(source)
+                .documentChunk(chunk)
                 .sourceLocator(locator != null ? locator : source.getUrl())
                 .supportType(evaluation.supportType())
                 .relevantPassage(supportingPassage)

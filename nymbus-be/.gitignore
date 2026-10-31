@@ -4,8 +4,13 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+# Spring Boot configuration files
+**/application.yaml
+**/application.yml
+
 src/main/resources/application.yaml
 docker-compose.yaml
+data/
 
 .DS_Store
 **/.DS_Store

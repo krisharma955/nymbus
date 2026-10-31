@@ -61,6 +61,8 @@ public class WorkflowService {
     private final EvidenceService evidenceService;
     private final WorkflowEventService workflowEventService;
     private final AgentMessageService agentMessageService;
+    private final com.graviton.nymbus.document.service.DocumentService documentService;
+    private final com.graviton.nymbus.document.repository.DocumentChunkRepository documentChunkRepository;
 
     @Value("${nymbus.workflow.max-retries:2}")
     private int maxRetries;
@@ -244,13 +246,32 @@ public class WorkflowService {
             return;
         }
 
+        // RAG: Retrieve relevant private document chunks for the subtask query
+        List<com.graviton.nymbus.document.entity.DocumentChunk> taskChunks = Collections.emptyList();
+        try {
+            taskChunks = documentService.searchTaskChunks(taskId, claim.subTaskTitle(), 3);
+        } catch (Exception e) {
+            log.debug("Document chunk search returned no results or failed: {}", e.getMessage());
+        }
+
+        List<SearchResult> docSources = new ArrayList<>();
+        for (com.graviton.nymbus.document.entity.DocumentChunk chunk : taskChunks) {
+            String docFileName = (chunk.getDocument() != null && chunk.getDocument().getFileName() != null)
+                    ? chunk.getDocument().getFileName()
+                    : "Document";
+            UUID docId = chunk.getDocument() != null ? chunk.getDocument().getId() : chunk.getId();
+            String title = docFileName + " (Page " + (chunk.getPageNumber() != null ? chunk.getPageNumber() : 1) + ")";
+            String url = "doc://" + docId + "/chunks/" + chunk.getId();
+            docSources.add(new SearchResult(title, url, chunk.getContent(), 1.0));
+        }
+
         long start = System.currentTimeMillis();
         ResearchAgent.ResearchExecutionResult execResult = null;
         Exception error = null;
 
         try {
             execResult = researchAgent.executeResearchWithAudit(
-                    claim.subTaskTitle(), claim.subTaskDescription(), claim.taskPrompt());
+                    claim.subTaskTitle(), claim.subTaskDescription(), claim.taskPrompt(), docSources);
         } catch (Exception e) {
             log.error("Error executing research subtask {}: {}", subTaskId, e.getMessage(), e);
             error = e;
@@ -343,11 +364,28 @@ public class WorkflowService {
 
         // 2. Ingest and persist Sources
         Map<String, Source> urlToSource = new HashMap<>();
+        Map<String, com.graviton.nymbus.document.entity.DocumentChunk> urlToChunk = new HashMap<>();
+
         for (SearchResult sr : execResult.searchResults()) {
-            Source src = sourceService.getOrCreateSource(
-                    taskId, sr.url(), sr.title(), sr.content(),
-                    Map.of("score", sr.score() != null ? sr.score() : 1.0)
-            );
+            Source src;
+            if (sr.url() != null && sr.url().startsWith("doc://")) {
+                UUID chunkId = extractChunkId(sr.url());
+                com.graviton.nymbus.document.entity.DocumentChunk chunk = chunkId != null
+                        ? documentChunkRepository.findById(chunkId).orElse(null)
+                        : null;
+                if (chunk != null) {
+                    src = sourceService.createOrGetUserDocumentSource(taskId, chunk.getDocument(), chunk);
+                    urlToChunk.put(sr.url(), chunk);
+                } else {
+                    src = sourceService.getOrCreateSource(taskId, sr.url(), sr.title(), sr.content(), Collections.emptyMap());
+                }
+            } else {
+                src = sourceService.getOrCreateSource(
+                        taskId, sr.url(), sr.title(), sr.content(),
+                        Map.of("score", sr.score() != null ? sr.score() : 1.0)
+                );
+            }
+
             urlToSource.put(sr.url(), src);
             workflowEventService.recordEvent(
                     taskId, subTask, researchExec,
@@ -382,6 +420,8 @@ public class WorkflowService {
                 );
             }
 
+            com.graviton.nymbus.document.entity.DocumentChunk linkedChunk = urlToChunk.get(finding.sourceUrl());
+
             workflowEventService.recordEvent(
                     taskId, subTask, researchExec,
                     WorkflowEventType.CLAIM_EXTRACTED,
@@ -390,7 +430,7 @@ public class WorkflowService {
             );
 
             Evidence evidence = evidenceService.createAndVerifyEvidence(
-                    task, researchExec, verifExec, matchedSource,
+                    task, researchExec, verifExec, matchedSource, linkedChunk,
                     finding.fact(), finding.excerpt(), finding.sourceUrl()
             );
 
@@ -619,6 +659,16 @@ public class WorkflowService {
             return String.valueOf(agent.getConfiguration().get("model"));
         }
         return "openai/gpt-4o-mini";
+    }
+
+    private UUID extractChunkId(String docUrl) {
+        try {
+            int idx = docUrl.indexOf("/chunks/");
+            if (idx != -1) {
+                return UUID.fromString(docUrl.substring(idx + 8));
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     public record ExecutionClaim(

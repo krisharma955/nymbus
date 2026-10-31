@@ -8,4 +8,11 @@ public record VerificationEvaluationDto(
         SupportType supportType,
         String explanation,
         double confidenceScore
-) {}
+) {
+    public VerificationEvaluationDto {
+        if (confidenceScore > 1.0 && confidenceScore <= 100.0) {
+            confidenceScore = confidenceScore / 100.0;
+        }
+        confidenceScore = Math.round(Math.max(0.0, Math.min(1.0, confidenceScore)) * 1000.0) / 1000.0;
+    }
+}

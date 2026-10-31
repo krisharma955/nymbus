@@ -11,6 +11,7 @@ import java.util.UUID;
 public record SourceResponse(
         UUID id,
         UUID researchTaskId,
+        UUID documentId,
         String url,
         String canonicalUrlHash,
         String title,
@@ -27,6 +28,7 @@ public record SourceResponse(
         return new SourceResponse(
                 source.getId(),
                 source.getResearchTask() != null ? source.getResearchTask().getId() : null,
+                source.getDocument() != null ? source.getDocument().getId() : null,
                 source.getUrl(),
                 source.getCanonicalUrlHash(),
                 source.getTitle(),
