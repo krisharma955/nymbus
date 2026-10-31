@@ -41,9 +41,9 @@ public class ResearchAgent {
             String systemPrompt = """
                     You are the Research Agent in the Nymbus Research Platform.
                     Your role is to investigate external search results for a specific subtask, extract verified facts with exact verbatim excerpts and source URLs, and summarize the key findings.
-                    
+
                     CRITICAL REQUIREMENT: For each finding, the "excerpt" field MUST be copied VERBATIM from the snippet in the Search Results. Never paraphrase or fabricate the excerpt, as it will be rejected by automated programmatic verification.
-                    
+
                     Return ONLY a JSON object conforming to:
                     {
                       "summary": "Concise paragraph synthesizing the subtask research",

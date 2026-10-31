@@ -34,7 +34,7 @@ public class OrchestratorAgent {
                     - description: specific research instructions and query objectives
                     - priority: integer 1 (highest) to 5 (lowest)
                     - dependsOnTempIds: list of tempIds this subtask depends on (empty list for initial tasks)
-                    
+
                     Ensure there are NO cyclical dependencies.
                     Return ONLY a JSON object conforming to:
                     {

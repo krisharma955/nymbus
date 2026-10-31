@@ -1,0 +1,47 @@
+{
+  "title": "Select Your Minimal & Futuristic Direction",
+  "question": "Three re-thought, minimal, non-vibe-coded visual directions for Nymbus. Zero purple sparkles, zero generic clutter. Select your direction.",
+  "options": [
+    {
+      "id": "choice-1-spatial-ledger",
+      "label": "The Spatial Ledger",
+      "kicker": "ISOMETRIC THREE.JS DRAFTING PLANE",
+      "lineage": "High-precision architectural drafting & Linear/Raycast functional minimalism",
+      "thesis": "Radical reduction: monumental statement 'AUTONOMOUS RESEARCH. ABSOLUTE PROVENANCE.' with an interactive 3D orthographic drafting plane in Three.js displaying live subtasks and verified source excerpt cards.",
+      "palette": ["#090a0d", "#f8fafc", "#d4a373", "#272a30"],
+      "materials": ["3D orthographic drafting plane", "monumental headline", "floating subtask tiles", "hairline grid"],
+      "viewport": "Top half: clean masthead & massive typography. Center: interactive 3D isometric plane with subtask nodes and verified paragraph passages.",
+      "risk": "Requires clean camera perspective so isometric text cards remain crisp and legible.",
+      "comp": ".impeccable/mocks/decision/choice-1-spatial-ledger.jpg"
+    },
+    {
+      "id": "choice-2-swiss-matrix",
+      "label": "The Swiss Precision Matrix",
+      "kicker": "ARCHITECTURAL DATA GRID",
+      "lineage": "International Typographic Style (Vignelli / Aicher modernism) meets algorithmic telemetry",
+      "thesis": "Ruthless typographic architecture: monumental display type 'DECOMPOSE. VERIFY. PROVE.', asymmetric grid columns, kinetic subtask dependency streams, and International Klein Blue citation cards.",
+      "palette": ["#121316", "#ffffff", "#002fa7", "#272a30"],
+      "materials": ["monumental grotesque type", "1px surgical hairlines", "kinetic dependency streams", "tabular telemetry"],
+      "viewport": "Monumental header grid, live scrolling kinetic dependency streams, precision telemetry table, and cryptographic verified citation blocks.",
+      "risk": "Minimalist austerity must remain high-information without feeling cold.",
+      "comp": ".impeccable/mocks/decision/choice-2-swiss-matrix.jpg"
+    },
+    {
+      "id": "choice-3-blueprint-cad",
+      "label": "The Structural Blueprint CAD",
+      "kicker": "POLYHEDRAL KNOWLEDGE CRYSTAL",
+      "lineage": "Bauhaus technical drafting meets cryptographic proof validation",
+      "thesis": "Surgical drafting precision: CAD coordinate rulers, caliper markings, a central interactive 3D rotating polyhedral wireframe connecting the 5 agents, and expandable cryptographic proof trees.",
+      "palette": ["#10141e", "#f8fafc", "#00e5ff", "#ffb300"],
+      "materials": ["rotating 3D polyhedral wireframe", "caliper millimeter rulers", "laser cyan drafting lines", "proof inspection drawer"],
+      "viewport": "Drafting HUD: CAD coordinate grid with central 3D rotating knowledge crystal, left sidebar DAG subtask flow, right sidebar proof inspection drawer.",
+      "risk": "CAD aesthetic requires clear interactive feedback on draggable 3D components.",
+      "comp": ".impeccable/mocks/decision/choice-3-blueprint-cad.jpg"
+    }
+  ],
+  "buildPath": {
+    "value": "comp",
+    "toggle": true
+  },
+  "steer": true
+}

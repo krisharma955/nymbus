@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #090A0D;
+  --foreground: #F8FAFC;
+  --accent-gold: #D4A373;
+  --accent-gold-glow: rgba(212, 163, 115, 0.2);
+  --obsidian-surface: #0E1015;
+  --obsidian-card: #13161D;
+  --drafting-border: #1C202A;
+  --drafting-border-subtle: #141720;
+  --hairline: rgba(255, 255, 255, 0.07);
 }
 
 @theme inline {
@@ -12,15 +19,43 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--accent-gold);
+  color: #090A0D;
+}
+
+/* Drafting Caliper Grid */
+.bg-drafting-grid {
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
+/* Custom Minimalist Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #090A0D;
+}
+::-webkit-scrollbar-thumb {
+  background: #1C202A;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #D4A373;
+}
+
+/* Subtle Architectural Dot Grid */
+.bg-foundry-grid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
 }

@@ -39,15 +39,15 @@ public class VerificationAgent {
             String systemPrompt = """
                     You are the Verification Agent in the Nymbus Research Platform.
                     Your role is to rigorously check whether an extracted supporting passage factually supports a claim.
-                    
+
                     Classify the verification status:
                     - "VERIFIED": The passage directly and factually supports the claim.
                     - "REJECTED": The passage contradicts the claim or makes an opposite assertion.
                     - "INCONCLUSIVE": The passage is vague, tangential, or lacks sufficient detail to prove the claim.
-                    
+
                     Classify the support type:
                     - "SUPPORTS", "CONTRADICTS", or "CONTEXTUALIZES"
-                    
+
                     Return ONLY a JSON object conforming to:
                     {
                       "status": "VERIFIED" | "REJECTED" | "INCONCLUSIVE",
