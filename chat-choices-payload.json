@@ -1,0 +1,53 @@
+{
+  "title": "Choose the Inquest Workspace Architecture",
+  "question": "Select the structural and interactive direction for the Nymbus Inquest Chat & Task Progress Workspace. Consistent with The Spatial Ledger.",
+  "options": [
+    {
+      "id": "choice-1-dual-track",
+      "label": "The Dual-Track Inquest Ledger",
+      "kicker": "DUAL-STREAM SYNCHRONIZATION",
+      "lineage": "High-Frequency Scientific & Cryptographic Research Terminal",
+      "thesis": "Synchronized two-lane workspace: Dialogue & verified findings on the left lane, live 5-agent execution telemetry & subtask DAG on the right lane.",
+      "palette": ["#090A0D", "#F8FAFC", "#D4A373", "#1C202A", "#10B981"],
+      "materials": ["dual-stream-workspace", "1px-drafting-hairlines", "live-telemetry-rail", "monospace-locators"],
+      "viewport": "Left 260px history ledger; Center split-stream (dialogue lane + live agent subtask execution stream); Top agent conveyor",
+      "case": "Maximum transparency: researchers observe agent tool calls, subtask transitions, and passage digests unfolding beside the synthesized findings in real-time without obscuring conversation.",
+      "verdict": "wins",
+      "risk": "Requires two columns on desktop; cleanly stacks or tabs on mobile viewports.",
+      "body": "A synchronized dual-track workspace where conversation and multi-agent execution telemetry advance in lockstep side by side.",
+      "comp": "nymbus-fe/public/assets/choice-1-dual-track.svg"
+    },
+    {
+      "id": "choice-2-modular-canvas",
+      "label": "The Modular Canvas Ledger",
+      "kicker": "ISOMETRIC MICRO-DAG & DOSSIER CARDS",
+      "lineage": "Modernist Architectural Laboratory Notebook",
+      "thesis": "Top 3D/Isometric micro-DAG progress ribbon showing active subtask decomposition, stacked above expandable intelligence dossier cards.",
+      "palette": ["#090A0D", "#F8FAFC", "#D4A373", "#12151D", "#64748B"],
+      "materials": ["isometric-dag-ribbon", "modular-dossier-blocks", "accordion-tool-traces"],
+      "viewport": "Left categorized domain folders; Top 3D subtask wireframe ribbon; Middle stacked finding cards with inline source highlights",
+      "case": "Direct visual continuity with The Spatial Ledger 3D plane from the landing page, rendered as a persistent micro-DAG progress header above structured cards.",
+      "verdict": "competitive",
+      "risk": "Cards consume vertical height if many tool actions run simultaneously.",
+      "body": "An architectural notebook format featuring an isometric task progress ribbon and modular intelligence findings.",
+      "comp": "nymbus-fe/public/assets/choice-2-modular-canvas.svg"
+    },
+    {
+      "id": "choice-3-forensic-stream",
+      "label": "The Integrated Forensic Stream",
+      "kicker": "UNBROKEN CHRONOLOGICAL AUDIT TRAIL",
+      "lineage": "Linear / Raycast Pure Functional Minimalism",
+      "thesis": "Single unified chronological timeline where prompts, real-time agent execution traces, and verified conclusion cards flow seamlessly in one continuous feed.",
+      "palette": ["#090A0D", "#F8FAFC", "#D4A373", "#151922", "#475569"],
+      "materials": ["timeline-audit-rail", "inline-subtask-checklist", "floating-command-dock"],
+      "viewport": "Left cryptographic session tree; Middle unified forensic rail with ticking subtasks; Bottom floating prompt dock",
+      "case": "Zero visual overhead: pure chronological flow where subtasks tick complete in place, creating an immutable audit trail without window clutter.",
+      "verdict": "competitive",
+      "risk": "Very dense text flow requiring strong typography and clear state indicators.",
+      "body": "A pure chronological forensic rail where multi-agent subtasks and synthesized evidence flow seamlessly in an unbroken audit log.",
+      "comp": "nymbus-fe/public/assets/choice-3-forensic-stream.svg"
+    }
+  ],
+  "reroll": true,
+  "steer": true
+}
