@@ -9,15 +9,24 @@ import com.graviton.nymbus.agent.report.ReportAgent;
 import com.graviton.nymbus.agent.repository.AgentExecutionRepository;
 import com.graviton.nymbus.agent.repository.AgentRepository;
 import com.graviton.nymbus.agent.research.ResearchAgent;
+import com.graviton.nymbus.agent.service.AgentMessageService;
+import com.graviton.nymbus.evidence.entity.Evidence;
+import com.graviton.nymbus.evidence.entity.VerificationStatus;
+import com.graviton.nymbus.evidence.service.EvidenceService;
 import com.graviton.nymbus.report.entity.ReportStatus;
 import com.graviton.nymbus.report.entity.ResearchReport;
 import com.graviton.nymbus.report.repository.ResearchReportRepository;
 import com.graviton.nymbus.research.entity.ResearchTask;
 import com.graviton.nymbus.research.entity.TaskStatus;
 import com.graviton.nymbus.research.repository.ResearchTaskRepository;
+import com.graviton.nymbus.source.entity.Source;
+import com.graviton.nymbus.source.service.SourceService;
+import com.graviton.nymbus.tool.model.SearchResult;
+import com.graviton.nymbus.tool.service.ToolExecutionService;
 import com.graviton.nymbus.workflow.entity.SubTask;
 import com.graviton.nymbus.workflow.entity.SubTaskStatus;
 import com.graviton.nymbus.workflow.entity.TaskDependency;
+import com.graviton.nymbus.workflow.entity.WorkflowEventType;
 import com.graviton.nymbus.workflow.repository.SubTaskRepository;
 import com.graviton.nymbus.workflow.repository.TaskDependencyRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +36,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 
@@ -48,20 +56,30 @@ public class WorkflowService {
     private final ReportAgent reportAgent;
     private final ObjectMapper objectMapper;
 
+    private final SourceService sourceService;
+    private final ToolExecutionService toolExecutionService;
+    private final EvidenceService evidenceService;
+    private final WorkflowEventService workflowEventService;
+    private final AgentMessageService agentMessageService;
+
     @Value("${nymbus.workflow.max-retries:2}")
     private int maxRetries;
 
-    /**
-     * Attempts to atomically start the workflow for the given task.
-     * Returns true if this invocation claimed the task and started execution;
-     * returns false if task was not in PENDING state (idempotent safeguard).
-     */
+    // Track re-research passes per subtask (max 1 extra pass)
+    private final Set<UUID> reResearchedSubTasks = Collections.synchronizedSet(new HashSet<>());
+
     @Transactional
     public boolean triggerExecution(UUID taskId) {
         int updated = researchTaskRepository.transitionStatusIfExpected(
                 taskId, TaskStatus.PENDING, TaskStatus.PLANNING, Instant.now());
         if (updated > 0) {
             log.info("Task {} claimed for workflow execution (PENDING -> PLANNING)", taskId);
+            workflowEventService.recordEvent(
+                    taskId, null, null,
+                    WorkflowEventType.TASK_STARTED,
+                    "Task execution started. Orchestrator initializing research plan.",
+                    Collections.emptyMap()
+            );
             return true;
         } else {
             log.info("Task {} not in PENDING state; execution trigger ignored idempotently", taskId);
@@ -97,6 +115,7 @@ public class WorkflowService {
                 generateAndSaveReport(taskId);
             } else {
                 log.warn("Not all subtasks completed for task {}. Report generation skipped.", taskId);
+                failTask(taskId, "One or more research subtasks failed to complete.");
             }
 
         } catch (Exception e) {
@@ -127,7 +146,7 @@ public class WorkflowService {
                 .executionTimeMs(durationMs)
                 .completedAt(Instant.now())
                 .build();
-        agentExecutionRepository.save(execution);
+        execution = agentExecutionRepository.save(execution);
 
         // Persist SubTasks and map tempId -> SubTask
         Agent researchAgentDef = agentRepository.findByCode(AgentCode.RESEARCH).orElseThrow();
@@ -165,6 +184,14 @@ public class WorkflowService {
             }
         }
 
+        // Emit PLAN_CREATED event
+        workflowEventService.recordEvent(
+                taskId, null, execution,
+                WorkflowEventType.PLAN_CREATED,
+                "Research plan established with " + planOutput.subTasks().size() + " subtasks.",
+                Map.of("subtaskCount", planOutput.subTasks().size(), "overview", planOutput.overview())
+        );
+
         log.info("Plan and {} subtasks persisted for task {}", planOutput.subTasks().size(), taskId);
     }
 
@@ -178,7 +205,6 @@ public class WorkflowService {
 
             List<SubTask> readySubTasks = getReadySubTasks(taskId);
             if (readySubTasks.isEmpty()) {
-                // Check if any in-progress or blocked
                 long inProgressCount = subTaskRepository.countByResearchTaskIdAndStatus(taskId, SubTaskStatus.IN_PROGRESS);
                 long blockedCount = subTaskRepository.countByResearchTaskIdAndStatus(taskId, SubTaskStatus.BLOCKED);
 
@@ -201,7 +227,6 @@ public class WorkflowService {
                 continue;
             }
 
-            // Process ready subtasks sequentially or bounded
             for (SubTask st : readySubTasks) {
                 processSingleSubTask(st.getId(), taskId);
             }
@@ -214,30 +239,30 @@ public class WorkflowService {
     }
 
     private void processSingleSubTask(UUID subTaskId, UUID taskId) {
-        // Step 1: Claim subtask and start execution record (Short TX)
         ExecutionClaim claim = claimSubTaskForExecution(subTaskId, taskId);
         if (claim == null) {
             return;
         }
 
         long start = System.currentTimeMillis();
-        ResearchOutput researchOutput = null;
+        ResearchAgent.ResearchExecutionResult execResult = null;
         Exception error = null;
 
-        // Step 2: Execute tool and model calls (NO DB TRANSACTION)
         try {
-            researchOutput = researchAgent.executeResearch(claim.subTaskTitle(), claim.subTaskDescription(), claim.taskPrompt());
+            execResult = researchAgent.executeResearchWithAudit(
+                    claim.subTaskTitle(), claim.subTaskDescription(), claim.taskPrompt());
         } catch (Exception e) {
             log.error("Error executing research subtask {}: {}", subTaskId, e.getMessage(), e);
             error = e;
         }
         long duration = System.currentTimeMillis() - start;
 
-        // Step 3: Complete or retry subtask (Short TX)
-        if (researchOutput != null) {
-            completeSubTaskSuccess(subTaskId, claim.executionId(), researchOutput, duration, taskId);
+        if (execResult != null && execResult.output() != null) {
+            completeSubTaskWithEvidence(subTaskId, claim.executionId(), execResult, duration, taskId);
         } else {
-            handleSubTaskFailure(subTaskId, claim.executionId(), error != null ? error.getMessage() : "Unknown error", claim.attemptNumber(), taskId);
+            handleSubTaskFailure(subTaskId, claim.executionId(),
+                    error != null ? error.getMessage() : "Research execution returned no output",
+                    claim.attemptNumber(), taskId);
         }
     }
 
@@ -269,6 +294,20 @@ public class WorkflowService {
                 .build();
         execution = agentExecutionRepository.save(execution);
 
+        // Emit SUBTASK_STARTED event & TASK_ASSIGNMENT message
+        workflowEventService.recordEvent(
+                taskId, subTask, execution,
+                WorkflowEventType.SUBTASK_STARTED,
+                "Subtask started: " + subTask.getTitle(),
+                Map.of("priority", subTask.getPriority(), "attempt", nextAttempt)
+        );
+
+        agentMessageService.recordMessage(
+                task, execution, null,
+                AgentMessageType.TASK_ASSIGNMENT,
+                Map.of("subTaskId", subTaskId, "title", subTask.getTitle())
+        );
+
         return new ExecutionClaim(
                 execution.getId(),
                 subTask.getTitle(),
@@ -279,21 +318,154 @@ public class WorkflowService {
     }
 
     @Transactional
-    public void completeSubTaskSuccess(UUID subTaskId, UUID executionId, ResearchOutput output, long durationMs, UUID taskId) {
+    public void completeSubTaskWithEvidence(
+            UUID subTaskId,
+            UUID researchExecutionId,
+            ResearchAgent.ResearchExecutionResult execResult,
+            long durationMs,
+            UUID taskId) {
+
         SubTask subTask = subTaskRepository.findById(subTaskId).orElseThrow();
+        ResearchTask task = researchTaskRepository.findById(taskId).orElseThrow();
+        AgentExecution researchExec = agentExecutionRepository.findById(researchExecutionId).orElseThrow();
+        Agent verificationAgentDef = agentRepository.findByCode(AgentCode.VERIFICATION).orElseThrow();
+
+        // 1. Audit Tool Execution (Web Search)
+        UUID toolExecId = toolExecutionService.startToolExecution(
+                researchExecutionId, "tavily_search",
+                Map.of("query", subTask.getTitle(), "count", execResult.searchResults().size())
+        );
+        toolExecutionService.completeToolExecution(
+                toolExecId,
+                Map.of("resultsCount", execResult.searchResults().size()),
+                execResult.searchDurationMs()
+        );
+
+        // 2. Ingest and persist Sources
+        Map<String, Source> urlToSource = new HashMap<>();
+        for (SearchResult sr : execResult.searchResults()) {
+            Source src = sourceService.getOrCreateSource(
+                    taskId, sr.url(), sr.title(), sr.content(),
+                    Map.of("score", sr.score() != null ? sr.score() : 1.0)
+            );
+            urlToSource.put(sr.url(), src);
+            workflowEventService.recordEvent(
+                    taskId, subTask, researchExec,
+                    WorkflowEventType.SOURCE_FOUND,
+                    "Source collected: " + src.getTitle() + " (" + src.getDomain() + ")",
+                    Map.of("sourceId", src.getId(), "url", src.getUrl(), "domain", src.getDomain())
+            );
+        }
+
+        // 3. Create VerificationAgent Execution (task-level execution tracking verification phase)
+        AgentExecution verifExec = AgentExecution.builder()
+                .researchTask(task)
+                .agent(verificationAgentDef)
+                .attemptNumber(1)
+                .status(ExecutionStatus.SUCCEEDED)
+                .inputPayload(Map.of("subTaskId", subTask.getId().toString(), "subTaskTitle", subTask.getTitle()))
+                .modelName(getModelName(verificationAgentDef))
+                .completedAt(Instant.now())
+                .build();
+        verifExec = agentExecutionRepository.save(verifExec);
+
+        // 4. Verify Claims & Persist Evidence
+        boolean hasRejectedClaim = false;
+        for (ResearchFindingDto finding : execResult.output().findings()) {
+            Source matchedSource = urlToSource.get(finding.sourceUrl());
+            if (matchedSource == null && !urlToSource.isEmpty()) {
+                matchedSource = urlToSource.values().iterator().next();
+            }
+            if (matchedSource == null) {
+                matchedSource = sourceService.getOrCreateSource(
+                        taskId, finding.sourceUrl(), finding.sourceTitle(), finding.excerpt(), Collections.emptyMap()
+                );
+            }
+
+            workflowEventService.recordEvent(
+                    taskId, subTask, researchExec,
+                    WorkflowEventType.CLAIM_EXTRACTED,
+                    "Claim extracted: " + finding.fact(),
+                    Map.of("fact", finding.fact(), "excerpt", finding.excerpt())
+            );
+
+            Evidence evidence = evidenceService.createAndVerifyEvidence(
+                    task, researchExec, verifExec, matchedSource,
+                    finding.fact(), finding.excerpt(), finding.sourceUrl()
+            );
+
+            if (evidence.getVerificationStatus() == VerificationStatus.VERIFIED) {
+                workflowEventService.recordEvent(
+                        taskId, subTask, verifExec,
+                        WorkflowEventType.CLAIM_VERIFIED,
+                        "Claim verified: " + finding.fact(),
+                        Map.of("evidenceId", evidence.getId(), "confidence", evidence.getConfidenceScore())
+                );
+            } else {
+                hasRejectedClaim = true;
+                workflowEventService.recordEvent(
+                        taskId, subTask, verifExec,
+                        WorkflowEventType.CLAIM_REJECTED,
+                        "Claim rejected or inconclusive: " + finding.fact(),
+                        Map.of("evidenceId", evidence.getId(), "status", evidence.getVerificationStatus().name())
+                );
+            }
+        }
+
+        // 5. Bounded Re-Research (at most 1 extra pass if claims rejected/weak)
+        if (hasRejectedClaim && !reResearchedSubTasks.contains(subTaskId)) {
+            reResearchedSubTasks.add(subTaskId);
+            log.info("Triggering bounded 1-pass re-research for subtask {}", subTaskId);
+            workflowEventService.recordEvent(
+                    taskId, subTask, researchExec,
+                    WorkflowEventType.RE_RESEARCH_TRIGGERED,
+                    "Re-research pass triggered for subtask due to weak/unverified claims: " + subTask.getTitle(),
+                    Map.of("subTaskId", subTaskId)
+            );
+
+            // Execute follow-up research with refined query
+            try {
+                String refinedQuery = subTask.getTitle() + " verified empirical data";
+                ResearchAgent.ResearchExecutionResult retryResult = researchAgent.executeResearchWithAudit(
+                        refinedQuery, subTask.getDescription(), task.getPrompt());
+                for (ResearchFindingDto finding : retryResult.output().findings()) {
+                    Source src = sourceService.getOrCreateSource(
+                            taskId, finding.sourceUrl(), finding.sourceTitle(), finding.excerpt(), Collections.emptyMap());
+                    evidenceService.createAndVerifyEvidence(
+                            task, researchExec, verifExec, src, finding.fact(), finding.excerpt(), finding.sourceUrl());
+                }
+            } catch (Exception e) {
+                log.warn("Re-research pass failed for subtask {}: {}", subTaskId, e.getMessage());
+            }
+        }
+
+        // 6. Complete SubTask & Research Execution
         subTask.setStatus(SubTaskStatus.COMPLETED);
-        subTask.setResultSummary(output.summary());
+        subTask.setResultSummary(execResult.output().summary());
         subTask.setCompletedAt(Instant.now());
         subTaskRepository.save(subTask);
 
-        AgentExecution execution = agentExecutionRepository.findById(executionId).orElseThrow();
-        execution.setStatus(ExecutionStatus.SUCCEEDED);
-        execution.setOutputPayload(objectMapper.convertValue(output, new TypeReference<>() {}));
-        execution.setExecutionTimeMs(durationMs);
-        execution.setCompletedAt(Instant.now());
-        agentExecutionRepository.save(execution);
+        researchExec.setStatus(ExecutionStatus.SUCCEEDED);
+        researchExec.setOutputPayload(objectMapper.convertValue(execResult.output(), new TypeReference<>() {}));
+        researchExec.setExecutionTimeMs(durationMs);
+        researchExec.setCompletedAt(Instant.now());
+        agentExecutionRepository.save(researchExec);
 
-        // Promote newly unblocked subtasks (BLOCKED -> READY)
+        // Emit completion event & handoff message
+        workflowEventService.recordEvent(
+                taskId, subTask, researchExec,
+                WorkflowEventType.SUBTASK_COMPLETED,
+                "Subtask completed: " + subTask.getTitle(),
+                Map.of("subTaskId", subTaskId)
+        );
+
+        agentMessageService.recordMessage(
+                task, researchExec, null,
+                AgentMessageType.HANDOFF,
+                Map.of("subTaskId", subTaskId, "summary", execResult.output().summary())
+        );
+
+        // 7. Promote unblocked subtasks (BLOCKED -> READY)
         List<SubTask> unblocked = subTaskRepository.findUnblockedSubTasks(taskId);
         for (SubTask st : unblocked) {
             st.setStatus(SubTaskStatus.READY);
@@ -316,12 +488,18 @@ public class WorkflowService {
             log.warn("Subtask {} failed attempt {}/{}. Returning to READY for retry.", subTaskId, attemptNumber, maxRetries);
             subTask.setStatus(SubTaskStatus.READY);
             subTaskRepository.save(subTask);
+
+            workflowEventService.recordEvent(
+                    taskId, subTask, execution,
+                    WorkflowEventType.RETRY_SCHEDULED,
+                    "Subtask attempt " + attemptNumber + " failed. Scheduled retry.",
+                    Map.of("attempt", attemptNumber, "error", errorMessage)
+            );
         } else {
             log.error("Subtask {} exhausted max retries ({}). Marking FAILED and cancelling workflow.", subTaskId, maxRetries);
             subTask.setStatus(SubTaskStatus.FAILED);
             subTaskRepository.save(subTask);
 
-            // Cancel any remaining unfinished subtasks
             List<SubTask> allSubTasks = subTaskRepository.findByResearchTaskIdOrderByPriorityAscCreatedAtAsc(taskId);
             for (SubTask st : allSubTasks) {
                 if (st.getStatus() != SubTaskStatus.COMPLETED && st.getStatus() != SubTaskStatus.FAILED) {
@@ -344,8 +522,11 @@ public class WorkflowService {
                 .map(st -> new SubTaskSummaryDto(st.getId(), st.getTitle(), st.getDescription(), st.getResultSummary()))
                 .toList();
 
+        List<com.graviton.nymbus.source.entity.Source> sources = sourceService.getSourcesForTask(taskId);
+        List<com.graviton.nymbus.evidence.entity.Evidence> evidenceList = evidenceService.getEvidenceForTask(taskId);
+
         long start = System.currentTimeMillis();
-        ReportOutput reportOutput = reportAgent.generateReport(task.getTitle(), task.getPrompt(), summaries);
+        ReportOutput reportOutput = reportAgent.generateReport(task.getTitle(), task.getPrompt(), summaries, sources, evidenceList);
         long duration = System.currentTimeMillis() - start;
 
         persistFinalReport(taskId, reportOutput, duration);
@@ -356,7 +537,6 @@ public class WorkflowService {
         ResearchTask task = researchTaskRepository.findById(taskId).orElseThrow();
         Agent reportAgentDef = agentRepository.findByCode(AgentCode.REPORT).orElseThrow();
 
-        // Execution record for ReportAgent
         AgentExecution execution = AgentExecution.builder()
                 .researchTask(task)
                 .agent(reportAgentDef)
@@ -370,7 +550,6 @@ public class WorkflowService {
                 .build();
         execution = agentExecutionRepository.save(execution);
 
-        // Research report version
         int nextVersion = researchReportRepository.findTopByResearchTaskIdOrderByVersionDesc(taskId)
                 .map(r -> r.getVersion() + 1).orElse(1);
 
@@ -386,10 +565,25 @@ public class WorkflowService {
                 .build();
         researchReportRepository.save(report);
 
-        // Mark task completed
         task.setStatus(TaskStatus.COMPLETED);
         task.setCompletedAt(Instant.now());
         researchTaskRepository.save(task);
+
+        workflowEventService.recordEvent(
+                taskId, null, execution,
+                WorkflowEventType.REPORT_GENERATED,
+                "Report version " + nextVersion + " generated: " + report.getTitle(),
+                Map.of("reportId", report.getId(), "version", nextVersion)
+        );
+
+        workflowEventService.recordEvent(
+                taskId, null, execution,
+                WorkflowEventType.TASK_COMPLETED,
+                "Research task completed successfully.",
+                Map.of("reportId", report.getId())
+        );
+
+        workflowEventService.completeStream(taskId);
 
         log.info("Task {} successfully COMPLETED with report version {}", taskId, nextVersion);
     }
@@ -401,6 +595,14 @@ public class WorkflowService {
             task.setFailureReason(reason);
             task.setCompletedAt(Instant.now());
             researchTaskRepository.save(task);
+
+            workflowEventService.recordEvent(
+                    taskId, null, null,
+                    WorkflowEventType.TASK_FAILED,
+                    "Task execution failed: " + reason,
+                    Map.of("reason", reason)
+            );
+            workflowEventService.completeStream(taskId);
             log.warn("Task {} marked FAILED: {}", taskId, reason);
         });
     }
