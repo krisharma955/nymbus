@@ -53,12 +53,16 @@ public class WorkflowService {
 
     private final OrchestratorAgent orchestratorAgent;
     private final ResearchAgent researchAgent;
+    private final com.graviton.nymbus.agent.analysis.AnalysisAgent analysisAgent;
     private final ReportAgent reportAgent;
     private final ObjectMapper objectMapper;
 
     private final SourceService sourceService;
     private final ToolExecutionService toolExecutionService;
     private final EvidenceService evidenceService;
+    private final com.graviton.nymbus.evidence.repository.EvidenceRepository evidenceRepository;
+    private final com.graviton.nymbus.report.repository.ReportSectionRepository reportSectionRepository;
+    private final com.graviton.nymbus.report.repository.ReportSectionEvidenceRepository reportSectionEvidenceRepository;
     private final WorkflowEventService workflowEventService;
     private final AgentMessageService agentMessageService;
     private final com.graviton.nymbus.document.service.DocumentService documentService;
@@ -565,11 +569,47 @@ public class WorkflowService {
         List<com.graviton.nymbus.source.entity.Source> sources = sourceService.getSourcesForTask(taskId);
         List<com.graviton.nymbus.evidence.entity.Evidence> evidenceList = evidenceService.getEvidenceForTask(taskId);
 
-        long start = System.currentTimeMillis();
-        ReportOutput reportOutput = reportAgent.generateReport(task.getTitle(), task.getPrompt(), summaries, sources, evidenceList);
-        long duration = System.currentTimeMillis() - start;
+        // 1. Run AnalysisAgent (Phase 4 synthesis)
+        long analysisStart = System.currentTimeMillis();
+        com.graviton.nymbus.agent.dto.AnalysisOutput analysisOutput = analysisAgent.analyze(
+                task.getTitle(), task.getPrompt(), summaries, evidenceList, sources);
+        long analysisDuration = System.currentTimeMillis() - analysisStart;
 
-        persistFinalReport(taskId, reportOutput, duration);
+        recordAnalysisExecution(task, analysisOutput, analysisDuration);
+
+        // 2. Run ReportAgent with structured sections and citations
+        long reportStart = System.currentTimeMillis();
+        ReportOutput reportOutput = reportAgent.generateReport(
+                task.getTitle(), task.getPrompt(), summaries, sources, evidenceList, analysisOutput);
+        long reportDuration = System.currentTimeMillis() - reportStart;
+
+        persistFinalReport(taskId, reportOutput, reportDuration);
+    }
+
+    @Transactional
+    public void recordAnalysisExecution(ResearchTask task, com.graviton.nymbus.agent.dto.AnalysisOutput analysisOutput, long durationMs) {
+        Agent analysisAgentDef = agentRepository.findByCode(AgentCode.ANALYSIS).orElse(null);
+        if (analysisAgentDef == null) return;
+
+        AgentExecution execution = AgentExecution.builder()
+                .researchTask(task)
+                .agent(analysisAgentDef)
+                .attemptNumber(1)
+                .status(ExecutionStatus.SUCCEEDED)
+                .inputPayload(Map.of("taskTitle", task.getTitle(), "prompt", task.getPrompt()))
+                .outputPayload(objectMapper.convertValue(analysisOutput, new TypeReference<>() {}))
+                .modelName(getModelName(analysisAgentDef))
+                .executionTimeMs(durationMs)
+                .completedAt(Instant.now())
+                .build();
+        agentExecutionRepository.save(execution);
+
+        workflowEventService.recordEvent(
+                task.getId(), null, execution,
+                WorkflowEventType.ANALYSIS_COMPLETED,
+                "Analysis agent completed synthesis and fact categorization.",
+                Map.of("keyFindingsCount", analysisOutput.keyFindings().size())
+        );
     }
 
     @Transactional
@@ -603,7 +643,42 @@ public class WorkflowService {
                 .generatedByExecutionId(execution.getId())
                 .completedAt(Instant.now())
                 .build();
-        researchReportRepository.save(report);
+        report = researchReportRepository.save(report);
+
+        // Persist Phase 4 Report Sections and Citation Evidence
+        if (reportOutput.sections() != null && !reportOutput.sections().isEmpty()) {
+            for (com.graviton.nymbus.agent.dto.ReportSectionOutput secDto : reportOutput.sections()) {
+                com.graviton.nymbus.report.entity.ReportSection section = com.graviton.nymbus.report.entity.ReportSection.builder()
+                        .report(report)
+                        .sectionKey(secDto.sectionKey())
+                        .title(secDto.title())
+                        .contentMarkdown(secDto.contentMarkdown())
+                        .sectionOrder(secDto.sectionOrder())
+                        .build();
+                section = reportSectionRepository.save(section);
+
+                if (secDto.citedEvidenceIds() != null) {
+                    int citIdx = 1;
+                    for (UUID evId : secDto.citedEvidenceIds()) {
+                        if (evId == null) continue;
+                        var optEv = evidenceRepository.findById(evId);
+                        if (optEv.isPresent()) {
+                            com.graviton.nymbus.report.entity.ReportSectionEvidence rse =
+                                    com.graviton.nymbus.report.entity.ReportSectionEvidence.builder()
+                                            .reportSection(section)
+                                            .evidence(optEv.get())
+                                            .citationLabel("[" + citIdx++ + "]")
+                                            .build();
+                            try {
+                                reportSectionEvidenceRepository.save(rse);
+                            } catch (Exception e) {
+                                log.debug("Duplicate evidence citation ignored: {}", e.getMessage());
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         task.setStatus(TaskStatus.COMPLETED);
         task.setCompletedAt(Instant.now());
