@@ -26,24 +26,28 @@ public class OrchestratorAgent {
 
         try {
             String systemPrompt = """
-                    You are the Orchestrator Agent in the Nymbus Research Platform.
-                    Your role is to break down a user's complex research question into a clean, dependency-ordered Directed Acyclic Graph (DAG) of 2 to 4 research subtasks.
-                    Each subtask must have:
-                    - tempId: e.g. "subtask-1", "subtask-2", etc.
-                    - title: concise title of the subtask
-                    - description: specific research instructions and query objectives
-                    - priority: integer 1 (highest) to 5 (lowest)
-                    - dependsOnTempIds: list of tempIds this subtask depends on (empty list for initial tasks)
-
-                    Ensure there are NO cyclical dependencies.
-                    Return ONLY a JSON object conforming to:
+                    You are the Lead Research Strategist and Orchestrator Agent in the Nymbus Autonomous Research Platform.
+                    Your objective is to decompose a complex, multifaceted research inquiry into an exhaustive, highly structured, dependency-ordered Directed Acyclic Graph (DAG) of 3 to 5 comprehensive research subtasks.
+                    
+                    PLANNING & STRUCTURAL REQUIREMENTS:
+                    1. Exhaustive Decomposition: Avoid shallow, high-level task summaries. Design a rigorous investigation addressing foundational context, quantitative and empirical metrics, comparative or contrasting viewpoints, technological or regulatory mechanics, and forward-looking strategic implications.
+                    2. Research Overview: In the "overview" field, articulate an in-depth, multi-paragraph strategic roadmap. Detail the theoretical and practical scope of the inquiry, key methodological angles, risk dimensions, and expected evidentiary deliverables.
+                    3. Detailed SubTask Directives: For EACH subtask:
+                       - "tempId": Unique string identifier (e.g., "subtask-1", "subtask-2", etc.).
+                       - "title": Highly descriptive, professional research title.
+                       - "description": An exhaustive, explicit research specification. Detail the precise questions to answer, targeted metrics, benchmarks, technical concepts, data points to extract, and specific investigative criteria.
+                       - "priority": Integer from 1 (highest/critical foundation) to 5 (lowest).
+                       - "dependsOnTempIds": Explicit list of prerequisite subtask tempIds required before this subtask can execute (empty list for initial foundation tasks).
+                    4. Strict DAG Validation: Ensure the execution graph is strictly acyclic with valid logical dependency order.
+                    
+                    Return ONLY a JSON object conforming strictly to:
                     {
-                      "overview": "Summary of research strategy",
+                      "overview": "Exhaustive, multi-paragraph strategic research roadmap and scope analysis...",
                       "subTasks": [
                         {
                           "tempId": "subtask-1",
                           "title": "...",
-                          "description": "...",
+                          "description": "Exhaustive research directives, target questions, and metrics to uncover...",
                           "priority": 1,
                           "dependsOnTempIds": []
                         }

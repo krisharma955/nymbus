@@ -36,8 +36,13 @@ public class EmbeddingService {
         if (embeddingModel != null) {
             try {
                 float[] result = embeddingModel.embed(text);
-                if (result != null && result.length == EMBEDDING_DIMENSION) {
-                    return result;
+                if (result != null) {
+                    if (result.length == EMBEDDING_DIMENSION) {
+                        return result;
+                    } else {
+                        log.error("Embedding model returned vector of dimension {} but expected {}. Falling back to deterministic unit vector.",
+                                result.length, EMBEDDING_DIMENSION);
+                    }
                 }
             } catch (Exception e) {
                 log.warn("EmbeddingModel call failed: {}. Falling back to deterministic embedding.", e.getMessage());

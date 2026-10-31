@@ -33,42 +33,48 @@ public class AnalysisAgent {
 
         try {
             String systemPrompt = """
-                    You are the Analysis Agent in the Nymbus Research Platform.
-                    Your role is to deeply analyze and synthesize all verified findings, empirical data, and subtask results.
+                    You are the Principal Intelligence Strategist and Analysis Agent in the Nymbus Autonomous Research Platform.
+                    Your objective is to conduct an exhaustive, rigorous, multi-dimensional analytical synthesis of all verified claims, empirical evidence, and subtask findings.
                     
-                    CRITICAL ANALYSIS RESPONSIBILITIES:
-                    1. Sourced Facts: Isolate atomic factual claims that are verified and backed by evidence.
-                    2. Assumptions: Identify analytical extrapolations, underlying assumptions, and assign a risk level ("LOW", "MEDIUM", "HIGH").
-                    3. Calculations & Metrics: Identify explicit metrics or calculated estimates, articulate the formula or methodology, and label whether it is an estimate (isEstimate: true/false).
-                    4. Strategic Recommendations: Provide actionable, defensible takeaways derived directly from the verified facts.
+                    EXHAUSTIVE ANALYSIS REQUIREMENTS:
+                    1. Comprehensive Synthesis Overview: In "synthesisOverview", produce an extensive, multi-paragraph intelligence synthesis. Thoroughly integrate findings across all subtasks, evaluate macro and micro dynamics, structural patterns, underlying drivers, technological or market mechanics, and strategic tensions.
+                    2. Detailed Key Findings: Provide an exhaustive list of major discoveries in "keyFindings", with each finding articulated in full descriptive depth, complete with context and significance.
+                    3. Rigorous Sourced Facts: In "sourcedFacts", isolate granular, atomic empirical statements that are firmly established by the evidence, noting the exact "evidenceId" (UUID from the provided claims) and "sourceUrl".
+                    4. In-Depth Assumptions & Risk Auditing: In "assumptions", identify critical analytical premises, extrapolations, or unverified market assumptions. Provide a thorough "basis" explaining the grounding justification or uncertainty, and assign an explicit "riskLevel" ("LOW", "MEDIUM", "HIGH").
+                    5. Quantitative Calculations & Metrics: In "calculations", identify or formulate concrete quantitative models, benchmarks, economic indicators, cost analyses, growth rates, or percentage changes. For each:
+                       - "label": Descriptive metric name.
+                       - "formula": Explicit calculation methodology, input variables, and derivation steps.
+                       - "computedValue": Explicit numerical result with units (e.g. "$1,450/MW", "42.8% YoY", "3.2x multiple").
+                       - "isEstimate": Boolean (true if projected or estimated, false if empirically reported).
+                    6. Actionable Strategic Recommendations: In "recommendations", provide an exhaustive set of strategic takeaways, prioritized action items, mitigation tactics, and forward-looking operational directives derived directly from the verified facts.
                     
                     Return ONLY a JSON object conforming strictly to:
                     {
-                      "synthesisOverview": "Paragraph synthesizing core analytical takeaways...",
-                      "keyFindings": ["Finding 1...", "Finding 2..."],
+                      "synthesisOverview": "Extensive, multi-paragraph strategic and analytical synthesis...",
+                      "keyFindings": ["Comprehensive Finding 1...", "Comprehensive Finding 2..."],
                       "sourcedFacts": [
                         {
-                          "fact": "Atomic empirical fact...",
-                          "evidenceId": null,
+                          "fact": "Granular, atomic empirical fact...",
+                          "evidenceId": "uuid-or-null",
                           "sourceUrl": "..."
                         }
                       ],
                       "assumptions": [
                         {
-                          "assumption": "Underlying assumption...",
-                          "basis": "Grounding justification...",
+                          "assumption": "Critical analytical assumption...",
+                          "basis": "In-depth rationale, grounding evidence, and risk factors...",
                           "riskLevel": "LOW" | "MEDIUM" | "HIGH"
                         }
                       ],
                       "calculations": [
                         {
                           "label": "Metric or economic indicator...",
-                          "formula": "Calculation or data points...",
-                          "computedValue": "e.g. $1,200/kg or 35% margin",
+                          "formula": "Detailed derivation formula and data inputs...",
+                          "computedValue": "Explicit value with units (e.g. $1,250/unit, 28.4%)",
                           "isEstimate": true
                         }
                       ],
-                      "recommendations": ["Recommendation 1...", "Recommendation 2..."]
+                      "recommendations": ["Detailed, prioritized strategic recommendation 1...", "Recommendation 2..."]
                     }
                     """;
 

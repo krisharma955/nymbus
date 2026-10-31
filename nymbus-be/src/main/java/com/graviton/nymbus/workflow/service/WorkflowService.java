@@ -415,9 +415,6 @@ public class WorkflowService {
         boolean hasRejectedClaim = false;
         for (ResearchFindingDto finding : execResult.output().findings()) {
             Source matchedSource = urlToSource.get(finding.sourceUrl());
-            if (matchedSource == null && !urlToSource.isEmpty()) {
-                matchedSource = urlToSource.values().iterator().next();
-            }
             if (matchedSource == null) {
                 matchedSource = sourceService.getOrCreateSource(
                         taskId, finding.sourceUrl(), finding.sourceTitle(), finding.excerpt(), Collections.emptyMap()
@@ -659,21 +656,27 @@ public class WorkflowService {
 
                 if (secDto.citedEvidenceIds() != null) {
                     int citIdx = 1;
+                    Set<UUID> citedInThisSection = new HashSet<>();
                     for (UUID evId : secDto.citedEvidenceIds()) {
                         if (evId == null) continue;
+                        if (!citedInThisSection.add(evId)) {
+                            log.debug("Duplicate evidence ID {} in section {}, skipping", evId, section.getSectionKey());
+                            continue;
+                        }
                         var optEv = evidenceRepository.findById(evId);
                         if (optEv.isPresent()) {
+                            var ev = optEv.get();
+                            if (!task.getId().equals(ev.getResearchTask().getId())) {
+                                log.warn("Evidence {} does not belong to task {}, skipping citation", evId, taskId);
+                                continue;
+                            }
                             com.graviton.nymbus.report.entity.ReportSectionEvidence rse =
                                     com.graviton.nymbus.report.entity.ReportSectionEvidence.builder()
                                             .reportSection(section)
-                                            .evidence(optEv.get())
+                                            .evidence(ev)
                                             .citationLabel("[" + citIdx++ + "]")
                                             .build();
-                            try {
-                                reportSectionEvidenceRepository.save(rse);
-                            } catch (Exception e) {
-                                log.debug("Duplicate evidence citation ignored: {}", e.getMessage());
-                            }
+                            reportSectionEvidenceRepository.save(rse);
                         }
                     }
                 }

@@ -8,6 +8,7 @@ target/
 **/application.yaml
 **/application.yml
 
+.env
 src/main/resources/application.yaml
 docker-compose.yaml
 data/

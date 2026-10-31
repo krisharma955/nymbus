@@ -8,20 +8,19 @@ import com.graviton.nymbus.document.repository.DocumentRepository;
 import com.graviton.nymbus.document.storage.ObjectStorageService;
 import com.graviton.nymbus.workflow.entity.WorkflowEventType;
 import com.graviton.nymbus.workflow.service.WorkflowEventService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.*;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class DocumentProcessingService {
 
     private final DocumentRepository documentRepository;
@@ -29,25 +28,58 @@ public class DocumentProcessingService {
     private final ObjectStorageService objectStorageService;
     private final EmbeddingService embeddingService;
     private final WorkflowEventService workflowEventService;
+    private final TransactionTemplate transactionTemplate;
+
+    public DocumentProcessingService(
+            DocumentRepository documentRepository,
+            DocumentChunkRepository documentChunkRepository,
+            ObjectStorageService objectStorageService,
+            EmbeddingService embeddingService,
+            WorkflowEventService workflowEventService,
+            PlatformTransactionManager transactionManager
+    ) {
+        this.documentRepository = documentRepository;
+        this.documentChunkRepository = documentChunkRepository;
+        this.objectStorageService = objectStorageService;
+        this.embeddingService = embeddingService;
+        this.workflowEventService = workflowEventService;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+    }
 
     @Async
-    @Transactional
     public void processDocumentAsync(UUID documentId) {
         log.info("Starting asynchronous processing for document {}", documentId);
-        Optional<Document> optDoc = documentRepository.findById(documentId);
-        if (optDoc.isEmpty()) {
+
+        // Step 1: Mark PROCESSING in a short transaction and read metadata
+        DocumentInfo docInfo = transactionTemplate.execute(status -> {
+            Optional<Document> optDoc = documentRepository.findById(documentId);
+            if (optDoc.isEmpty()) {
+                return null;
+            }
+            Document document = optDoc.get();
+            document.setProcessingStatus(DocumentProcessingStatus.PROCESSING);
+            document.setProcessingError(null);
+            documentRepository.save(document);
+            return new DocumentInfo(
+                    document.getId(),
+                    document.getFileName(),
+                    document.getContentType(),
+                    document.getObjectKey(),
+                    document.getResearchTask().getId()
+            );
+        });
+
+        if (docInfo == null) {
             log.error("Document {} not found for processing", documentId);
             return;
         }
 
-        Document document = optDoc.get();
-        document.setProcessingStatus(DocumentProcessingStatus.PROCESSING);
-        documentRepository.save(document);
-
         try {
-            byte[] fileBytes = objectStorageService.download(document.getObjectKey());
-            List<ExtractedPage> pages = extractPages(document.getFileName(), document.getContentType(), fileBytes);
+            // Step 2: External I/O (R2 download, text extraction, chunking, embeddings) OUTSIDE transaction
+            byte[] fileBytes = objectStorageService.download(docInfo.objectKey());
+            List<ExtractedPage> pages = extractPages(docInfo.fileName(), docInfo.contentType(), fileBytes);
 
+            List<ChunkData> chunksToPersist = new ArrayList<>();
             int chunkIndex = 0;
             for (ExtractedPage page : pages) {
                 List<String> pageChunks = chunkText(page.content(), 800, 100);
@@ -55,46 +87,65 @@ public class DocumentProcessingService {
                     if (chunkContent.isBlank()) continue;
 
                     int tokenCount = Math.max(1, chunkContent.length() / 4);
+                    float[] embedding = embeddingService.computeEmbedding(chunkContent);
+                    String vectorStr = embeddingService.toVectorString(embedding);
+
+                    chunksToPersist.add(new ChunkData(
+                            chunkIndex++,
+                            chunkContent,
+                            page.pageNumber(),
+                            tokenCount,
+                            vectorStr
+                    ));
+                }
+            }
+
+            // Step 3: Save chunks and update document status in a short transaction
+            transactionTemplate.executeWithoutResult(status -> {
+                Document document = documentRepository.findById(documentId).orElseThrow();
+                for (ChunkData cd : chunksToPersist) {
                     DocumentChunk chunk = DocumentChunk.builder()
                             .document(document)
-                            .chunkIndex(chunkIndex++)
-                            .content(chunkContent)
-                            .pageNumber(page.pageNumber())
-                            .tokenCount(tokenCount)
+                            .chunkIndex(cd.chunkIndex())
+                            .content(cd.content())
+                            .pageNumber(cd.pageNumber())
+                            .tokenCount(cd.tokenCount())
                             .metadata(Map.of(
                                     "fileName", document.getFileName(),
-                                    "pageNumber", page.pageNumber()
+                                    "pageNumber", cd.pageNumber() != null ? cd.pageNumber() : 1
                             ))
                             .build();
 
                     chunk = documentChunkRepository.save(chunk);
-
-                    // Compute vector embedding and persist into VECTOR(1536) column
-                    float[] embedding = embeddingService.computeEmbedding(chunkContent);
-                    String vectorStr = embeddingService.toVectorString(embedding);
-                    documentChunkRepository.updateEmbedding(chunk.getId(), vectorStr);
+                    documentChunkRepository.updateEmbedding(chunk.getId(), cd.vectorStr());
                 }
-            }
 
-            document.setProcessingStatus(DocumentProcessingStatus.READY);
-            document.setProcessedAt(Instant.now());
-            documentRepository.save(document);
-            log.info("Document {} successfully processed into {} chunks", documentId, chunkIndex);
+                document.setProcessingStatus(DocumentProcessingStatus.READY);
+                document.setProcessedAt(Instant.now());
+                documentRepository.save(document);
+            });
+
+            log.info("Document {} successfully processed into {} chunks", documentId, chunksToPersist.size());
 
             workflowEventService.recordEvent(
-                    document.getResearchTask().getId(),
+                    docInfo.taskId(),
                     null,
                     null,
                     WorkflowEventType.DOCUMENT_PROCESSED,
-                    "Document processed: " + document.getFileName() + " (" + chunkIndex + " chunks indexed)",
-                    Map.of("documentId", document.getId(), "chunksCount", chunkIndex)
+                    "Document processed: " + docInfo.fileName() + " (" + chunksToPersist.size() + " chunks indexed)",
+                    Map.of("documentId", docInfo.id(), "chunksCount", chunksToPersist.size())
             );
 
         } catch (Exception e) {
             log.error("Failed to process document {}: {}", documentId, e.getMessage(), e);
-            document.setProcessingStatus(DocumentProcessingStatus.FAILED);
-            document.setProcessingError(e.getMessage());
-            documentRepository.save(document);
+            // Step 4: Mark FAILED in a short transaction
+            transactionTemplate.executeWithoutResult(status -> {
+                documentRepository.findById(documentId).ifPresent(document -> {
+                    document.setProcessingStatus(DocumentProcessingStatus.FAILED);
+                    document.setProcessingError(e.getMessage());
+                    documentRepository.save(document);
+                });
+            });
         }
     }
 
@@ -141,7 +192,6 @@ public class DocumentProcessingService {
         int start = 0;
         while (start < length) {
             int end = Math.min(start + targetChars, length);
-            // Try to split on sentence or paragraph boundary if possible
             if (end < length) {
                 int lastPeriod = cleaned.lastIndexOf(". ", end);
                 int lastNewline = cleaned.lastIndexOf("\n", end);
@@ -160,6 +210,10 @@ public class DocumentProcessingService {
 
         return chunks;
     }
+
+    private record DocumentInfo(UUID id, String fileName, String contentType, String objectKey, UUID taskId) {}
+
+    private record ChunkData(int chunkIndex, String content, Integer pageNumber, int tokenCount, String vectorStr) {}
 
     private record ExtractedPage(int pageNumber, String content) {}
 }

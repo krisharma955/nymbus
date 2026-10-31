@@ -30,8 +30,13 @@ import java.util.*;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class DocumentService {
+
+    private static final Set<String> ALLOWED_MIME_TYPES = Set.of(
+            "application/pdf",
+            "text/plain",
+            "text/markdown"
+    );
 
     private final DocumentRepository documentRepository;
     private final DocumentChunkRepository documentChunkRepository;
@@ -41,6 +46,29 @@ public class DocumentService {
     private final EmbeddingService embeddingService;
     private final CurrentUserService currentUserService;
     private final WorkflowEventService workflowEventService;
+    private final long maxSizeBytes;
+
+    public DocumentService(
+            DocumentRepository documentRepository,
+            DocumentChunkRepository documentChunkRepository,
+            ResearchTaskRepository researchTaskRepository,
+            ObjectStorageService objectStorageService,
+            DocumentProcessingService documentProcessingService,
+            EmbeddingService embeddingService,
+            CurrentUserService currentUserService,
+            WorkflowEventService workflowEventService,
+            @org.springframework.beans.factory.annotation.Value("${nymbus.documents.max-size-bytes:26214400}") long maxSizeBytes
+    ) {
+        this.documentRepository = documentRepository;
+        this.documentChunkRepository = documentChunkRepository;
+        this.researchTaskRepository = researchTaskRepository;
+        this.objectStorageService = objectStorageService;
+        this.documentProcessingService = documentProcessingService;
+        this.embeddingService = embeddingService;
+        this.currentUserService = currentUserService;
+        this.workflowEventService = workflowEventService;
+        this.maxSizeBytes = maxSizeBytes;
+    }
 
     @Transactional
     public DocumentResponse uploadDocument(UUID taskId, MultipartFile file) {
@@ -52,22 +80,52 @@ public class DocumentService {
             throw new IllegalArgumentException("Cannot upload empty file");
         }
 
+        if (file.getSize() > maxSizeBytes) {
+            throw new IllegalArgumentException("File size exceeds maximum allowed limit of " + maxSizeBytes + " bytes");
+        }
+
+        String rawContentType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
+        String normalizedContentType = rawContentType.split(";")[0].trim().toLowerCase();
+
+        // Also check by file extension if client didn't supply specific mime
+        String originalName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "document.pdf";
+        String lowerName = originalName.toLowerCase();
+        if ("application/octet-stream".equals(normalizedContentType)) {
+            if (lowerName.endsWith(".pdf")) {
+                normalizedContentType = "application/pdf";
+            } else if (lowerName.endsWith(".txt")) {
+                normalizedContentType = "text/plain";
+            } else if (lowerName.endsWith(".md")) {
+                normalizedContentType = "text/markdown";
+            }
+        }
+
+        if (!ALLOWED_MIME_TYPES.contains(normalizedContentType)) {
+            throw new IllegalArgumentException("Unsupported file type: " + rawContentType + ". Allowed types: application/pdf, text/plain, text/markdown");
+        }
+
         try {
             byte[] fileBytes = file.getBytes();
             String checksum = computeSha256(fileBytes);
-            String originalName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "document.pdf";
-            String contentType = file.getContentType() != null ? file.getContentType() : "application/pdf";
-            String objectKey = "tasks/" + taskId + "/docs/" + UUID.randomUUID() + "-" + originalName;
+
+            // Sanitize filename for object key to prevent directory traversal and invalid characters
+            String baseName = java.nio.file.Paths.get(originalName).getFileName().toString();
+            String sanitizedFileName = baseName.replaceAll("[^a-zA-Z0-9._-]", "_");
+            if (sanitizedFileName.isBlank()) {
+                sanitizedFileName = "document.pdf";
+            }
+
+            String objectKey = "tasks/" + taskId + "/docs/" + UUID.randomUUID() + "-" + sanitizedFileName;
 
             // Upload file to Cloudflare R2 / storage
-            objectStorageService.upload(objectKey, fileBytes, contentType);
+            objectStorageService.upload(objectKey, fileBytes, normalizedContentType);
 
             Document document = Document.builder()
                     .user(user)
                     .researchTask(task)
                     .fileName(originalName)
                     .objectKey(objectKey)
-                    .contentType(contentType)
+                    .contentType(normalizedContentType)
                     .fileSizeBytes(file.getSize())
                     .checksumSha256(checksum)
                     .processingStatus(DocumentProcessingStatus.UPLOADED)

@@ -31,7 +31,7 @@ public class SourceService {
     @Transactional
     public Source createOrGetUserDocumentSource(UUID researchTaskId, com.graviton.nymbus.document.entity.Document document, com.graviton.nymbus.document.entity.DocumentChunk chunk) {
         ResearchTask task = researchTaskRepository.findById(researchTaskId).orElseThrow();
-        String docUrl = "doc://" + document.getId() + "/pages/" + (chunk.getPageNumber() != null ? chunk.getPageNumber() : 1);
+        String docUrl = "doc://" + document.getId() + "/chunks/" + chunk.getId();
         String urlHash = canonicalUrlService.sha256Hex(docUrl);
 
         Optional<Source> existing = sourceRepository.findByResearchTaskIdAndCanonicalUrlHash(researchTaskId, urlHash);

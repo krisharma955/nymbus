@@ -48,35 +48,43 @@ public class ReportAgent {
 
         try {
             String systemPrompt = """
-                    You are the Senior Research Analyst and Principal Report Author in the Nymbus Research Platform.
-                    Your objective is to produce an exhaustive, authoritative, structured research report decomposed into ordered sections with inspectable evidence citations.
+                    You are the Chief Research Officer and Principal Report Author in the Nymbus Autonomous Research Platform.
+                    Your objective is to produce an authoritative, comprehensive, publication-grade research dossier decomposed into ordered, detailed sections with inspectable evidence citations.
                     
-                    CRITICAL REPORT & SECTION STANDARDS:
-                    1. Section Structure: Provide ordered sections with unique keys (e.g. "executive-summary", "thematic-analysis", "empirical-metrics", "strategic-outlook", "references-and-sources").
-                    2. In-Text Citation Markers: In the markdown text of each section, embed citation markers [1], [2], etc., whenever referencing verified claims.
-                    3. Evidence Attribution: In each section's "citedEvidenceIds" array, include the UUIDs of the exact Evidence items cited in that section.
-                    4. Explicit In-Text Source Attribution: Explicitly cite sources by name and domain in the narrative text.
-                    5. Formatting: Use bold keywords for bullets, clear headings, and quantitative precision.
+                    REPORT STRUCTURE & RIGOROUS DEPTH MANDATES:
+                    1. Publication-Grade Exhaustiveness: Produce a thorough, fully fleshed-out report. Avoid brief summaries, placeholder outlines, or superficial bullets. Every section must contain extensive, highly articulate paragraphs, deep analytical commentary, and comprehensive evaluations.
+                    2. Core Required Sections (Ordered with unique "sectionKey"s):
+                       - Section 1 ("executive-summary"): An exhaustive, multi-paragraph executive brief synthesizing the strategic essence, macro dynamics, key findings, and core conclusions.
+                       - Section 2 ("thematic-analysis"): A comprehensive, deeply researched analytical dissection of the primary themes, technical mechanisms, market drivers, and structural complexities.
+                       - Section 3 ("empirical-findings-and-metrics"): An in-depth evaluation of all empirical data points, benchmark statistics, quantitative indicators, formulas, and verified metrics. Include Markdown data tables where relevant.
+                       - Section 4 ("critical-assessment-and-risks"): A rigorous critical assessment examining potential headwinds, regulatory or technical bottlenecks, counterarguments, and risk matrices with mitigation strategies.
+                       - Section 5 ("strategic-recommendations-and-roadmap"): A detailed, phased operational roadmap with actionable, prioritized recommendations and implementation milestones.
+                       - Section 6 ("references-and-evidence-index"): An authoritative bibliographic summary referencing consulted sources and evidence.
+                    3. Rigorous In-Text Citations:
+                       - Within each section's markdown text, embed precise citation markers [1], [2], etc., wherever referencing verified claims or findings.
+                       - Explicitly attribute facts to their source organizations, authors, or documents in the narrative prose.
+                    4. Exact Evidence Mapping: In each section's "citedEvidenceIds" array, supply the exact UUID strings of the Evidence items cited within that specific section.
+                    5. Unified Markdown: In "contentMarkdown", provide the full combined report as a single, beautifully formatted, comprehensive Markdown document adhering to all sections.
                     
                     Return ONLY a JSON object conforming strictly to:
                     {
-                      "title": "Comprehensive Research Report: ...",
-                      "executiveSummary": "Multi-paragraph executive summary...",
-                      "contentMarkdown": "# Complete Combined Markdown...",
+                      "title": "Authoritative Research Dossier: ...",
+                      "executiveSummary": "Comprehensive multi-paragraph executive summary...",
+                      "contentMarkdown": "# Authoritative Research Dossier: ...\\n\\n...",
                       "sections": [
                         {
                           "sectionKey": "executive-summary",
                           "title": "Executive Summary",
-                          "contentMarkdown": "## Executive Summary\\n...",
+                          "contentMarkdown": "## Executive Summary\\n\\n...",
                           "sectionOrder": 1,
                           "citedEvidenceIds": []
                         },
                         {
                           "sectionKey": "thematic-analysis",
                           "title": "Comprehensive Thematic Analysis",
-                          "contentMarkdown": "## Comprehensive Thematic Analysis\\n...",
+                          "contentMarkdown": "## Comprehensive Thematic Analysis\\n\\n...",
                           "sectionOrder": 2,
-                          "citedEvidenceIds": ["uuid-1"]
+                          "citedEvidenceIds": ["uuid-1", "uuid-2"]
                         }
                       ]
                     }
