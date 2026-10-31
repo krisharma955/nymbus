@@ -135,10 +135,10 @@ export default function LandingPage() {
               </div>
 
               <Link
-                href="/login"
+                href="/chat"
                 className="px-3.5 py-1.5 text-xs text-[#94A3B8] hover:text-[#F8FAFC] border border-[#1C202A] hover:border-[#383F4E] transition-all"
               >
-                Sign In
+                Inquest Ledger
               </Link>
               <Link
                 href="/app"
@@ -224,7 +224,7 @@ export default function LandingPage() {
                 </div>
 
                 <Link
-                  href={`/login?query=${encodeURIComponent(inquiry)}`}
+                  href={`/chat?query=${encodeURIComponent(inquiry)}`}
                   className="w-full sm:w-auto px-5 py-2 bg-[#F8FAFC] hover:bg-[#FFFFFF] text-[#090A0D] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 whitespace-nowrap"
                 >
                   <span>DECOMPOSE SUBTASKS</span>
@@ -471,7 +471,7 @@ export default function LandingPage() {
             </div>
             <div className="flex items-center gap-4 text-[#94A3B8] mt-2 sm:mt-0">
               <a href="#ledger" className="hover:text-white">Top</a>
-              <Link href="/login" className="text-[#D4A373] hover:underline font-bold">
+              <Link href="/chat" className="text-[#D4A373] hover:underline font-bold">
                 Console &rarr;
               </Link>
             </div>
