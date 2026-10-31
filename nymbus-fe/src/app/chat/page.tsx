@@ -1,48 +1,44 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, Suspense } from "react";
+import React, { useState, useEffect, useCallback, useRef, Suspense, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
   Search,
   Plus,
-  ArrowRight,
-  ShieldCheck,
   CheckCircle2,
-  Clock,
-  ChevronRight,
-  ChevronDown,
-  FileText,
-  Hash,
-  Terminal,
   PanelLeftClose,
   PanelLeft,
-  Check,
   Paperclip,
   RefreshCw,
   AlertCircle,
-  Globe,
-  Sparkles,
   X,
+  Trash2,
+  Edit2,
+  Send,
+  Loader2,
+  Sparkles,
+  Terminal,
+  FileText,
 } from "lucide-react";
 
 import {
-  TaskResponse,
-  SubTaskResponse,
+  ConversationResponse,
+  DocumentResponse,
   ReportDetailResponse,
   ReportCitationResponse,
-  SourceResponse,
-  DocumentResponse,
   ExecutionMode,
-  WorkflowEventResponse,
+  UserMeResponse,
 } from "@/types/nymbus";
 import { api } from "@/lib/api";
-import { useWorkflowStream } from "@/hooks/useWorkflowStream";
-import { ReportSectionViewer } from "@/components/chat/ReportSectionViewer";
-import { SubtaskTimeline } from "@/components/chat/SubtaskTimeline";
-import { EvidenceDrawer } from "@/components/chat/EvidenceDrawer";
+import { initializeAuthFromUrl } from "@/lib/auth";
+import { useConversationChat } from "@/hooks/useConversationChat";
+import { useResearchTask } from "@/hooks/useResearchTask";
+import { ChatMessageItem } from "@/components/chat/ChatMessageItem";
 import { DocumentUploadModal } from "@/components/chat/DocumentUploadModal";
-import { SourcesLedger } from "@/components/chat/SourcesLedger";
-import { AttachedCorpusViewer } from "@/components/chat/AttachedCorpusViewer";
+import { EvidenceDrawer } from "@/components/chat/EvidenceDrawer";
+import { ResearchReportModal } from "@/components/chat/ResearchReportModal";
+
+const emptySubscribe = () => () => {};
 
 export default function ChatWorkspacePage() {
   return (
@@ -53,261 +49,354 @@ export default function ChatWorkspacePage() {
 }
 
 function ChatWorkspaceContent() {
-  // Live Backend State
-  const [tasks, setTasks] = useState<TaskResponse[]>([]);
-  const [activeTask, setActiveTask] = useState<TaskResponse | null>(null);
-  const [subtasks, setSubtasks] = useState<SubTaskResponse[]>([]);
-  const [activeReport, setActiveReport] = useState<ReportDetailResponse | null>(null);
-  const [activeSources, setActiveSources] = useState<SourceResponse[]>([]);
-  const [attachedDocs, setAttachedDocs] = useState<DocumentResponse[]>([]);
-  const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+  const isMounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
+
+  // --------------------------------------------------------------------------
+  // User & Authentication State
+  // --------------------------------------------------------------------------
+  const [currentUser, setCurrentUser] = useState<UserMeResponse | null>(null);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
+
+  // --------------------------------------------------------------------------
+  // Conversation Management State
+  // --------------------------------------------------------------------------
+  const [conversations, setConversations] = useState<ConversationResponse[]>([]);
+  const [activeConversation, setActiveConversation] = useState<ConversationResponse | null>(null);
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  const [editTitleValue, setEditTitleValue] = useState<string>("");
+  const [searchFilter, setSearchFilter] = useState<string>("");
+
+  // --------------------------------------------------------------------------
+  // Document Intelligence (RAG) State
+  // --------------------------------------------------------------------------
+  const [conversationDocs, setConversationDocs] = useState<DocumentResponse[]>([]);
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+  const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+  const [isDocModalOpen, setIsDocModalOpen] = useState<boolean>(false);
   const [docNotification, setDocNotification] = useState<string | null>(null);
 
-  // UI State
-  const [searchFilter, setSearchFilter] = useState<string>("");
-  const [inquestInput, setInquestInput] = useState<string>("");
-  const [executionMode, setExecutionMode] = useState<ExecutionMode>("DEEP_RESEARCH");
+  // --------------------------------------------------------------------------
+  // Chat Input & Execution State
+  // --------------------------------------------------------------------------
+  const [chatInput, setChatInput] = useState<string>("");
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("STANDARD");
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
-  const [traceExpanded, setTraceExpanded] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<"report" | "timeline" | "sources" | "documents">("report");
-  const [isExecuting, setIsExecuting] = useState<boolean>(false);
-  const [copiedHash, setCopiedHash] = useState<boolean>(false);
-  const [isMounted, setIsMounted] = useState<boolean>(false);
 
-  // Modals & Drawers
+  // --------------------------------------------------------------------------
+  // Autonomous Deep Research & Reports State
+  // --------------------------------------------------------------------------
+  const [activeResearchTaskId, setActiveResearchTaskId] = useState<string | null>(null);
+  const [reportsMap, setReportsMap] = useState<Record<string, ReportDetailResponse>>({});
+  const [selectedReportForModal, setSelectedReportForModal] = useState<ReportDetailResponse | null>(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+
+  // --------------------------------------------------------------------------
+  // Evidence Drawer State
+  // --------------------------------------------------------------------------
   const [drawerEvidenceId, setDrawerEvidenceId] = useState<string | null>(null);
   const [drawerCachedCitation, setDrawerCachedCitation] = useState<ReportCitationResponse | null>(null);
-  const [isDocModalOpen, setIsDocModalOpen] = useState<boolean>(false);
 
-  useEffect(() => {
-    setIsMounted(true);
+  // Scroll Container Ref
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const isAutoScrollEnabledRef = useRef<boolean>(true);
 
-    // Read initial query parameter from URL if present
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const initialQuery = params.get("query");
-      if (initialQuery) {
-        setInquestInput(initialQuery);
-      }
-    }
-  }, []);
-
-  // Fetch real sub-resources (subtasks, sources, reports, documents) for a specific task
-  const loadActiveTaskDetails = useCallback(async (taskId: string) => {
+  // --------------------------------------------------------------------------
+  // Conversations API Loader
+  // --------------------------------------------------------------------------
+  const loadConversations = useCallback(async (selectFirst = false) => {
     try {
-      const [stList, srcList, reports, docs] = await Promise.all([
-        api.getSubTasks(taskId).catch(() => []),
-        api.getSources(taskId).catch(() => []),
-        api.getReports(taskId).catch(() => []),
-        api.listDocuments(taskId).catch(() => []),
-      ]);
-
-      setSubtasks(stList);
-      setActiveSources(srcList);
-      setAttachedDocs(docs);
-
-      if (reports && reports.length > 0) {
-        const detail = await api.getReportDetail(reports[0].id).catch(() => null);
-        setActiveReport(detail);
-      } else {
-        setActiveReport(null);
-      }
-    } catch (err: unknown) {
-      console.warn("Error loading task sub-resources:", err);
-    }
-  }, []);
-
-  // Fetch tasks list from live backend
-  const refreshTasks = useCallback(async (selectFirstIfNone = false) => {
-    try {
-      const page = await api.listTasks(0, 50);
+      const page = await api.listConversations(0, 50);
+      const fetched = page.content || [];
+      setConversations(fetched);
       setBackendOnline(true);
       setBackendError(null);
-      const fetchedTasks = page.content || [];
-      setTasks(fetchedTasks);
 
-      if (selectFirstIfNone && fetchedTasks.length > 0) {
-        setActiveTask(fetchedTasks[0]);
-        loadActiveTaskDetails(fetchedTasks[0].id);
+      if (selectFirst && fetched.length > 0 && !activeConversation) {
+        setActiveConversation(fetched[0]);
       }
     } catch (err: unknown) {
       setBackendOnline(false);
       setBackendError(err instanceof Error ? err.message : "Failed to connect to backend");
     }
-  }, [loadActiveTaskDetails]);
+  }, [activeConversation]);
 
-  // Initial load
-  useEffect(() => {
-    refreshTasks(true);
-  }, [refreshTasks]);
+  // Load conversation documents & research tasks when conversation changes
+  const loadConversationAuxiliary = useCallback(async (convId: string) => {
+    try {
+      const [docs, researchTasks] = await Promise.all([
+        api.listConversationDocuments(convId).catch(() => []),
+        api.listConversationResearchTasks(convId).catch(() => []),
+      ]);
 
-  // Reload task details when activeTask changes
-  useEffect(() => {
-    if (activeTask?.id) {
-      loadActiveTaskDetails(activeTask.id);
-      setIsExecuting(
-        activeTask.status === "PENDING" ||
-          activeTask.status === "PLANNING" ||
-          activeTask.status === "RUNNING"
-      );
-    } else {
-      setSubtasks([]);
-      setActiveReport(null);
-      setActiveSources([]);
-      setIsExecuting(false);
+      setConversationDocs(docs);
+
+      if (researchTasks && researchTasks.length > 0) {
+        const runningTask = researchTasks.find(
+          (t) => t.status === "RUNNING" || t.status === "PLANNING" || t.status === "PENDING"
+        );
+
+        if (runningTask) {
+          setActiveResearchTaskId(runningTask.taskId);
+        } else {
+          const completedTask = researchTasks.find((t) => t.status === "COMPLETED" && t.reportId);
+          if (completedTask?.reportId) {
+            api.getReportDetail(completedTask.reportId).then((rep) => {
+              setReportsMap((prev) => ({ ...prev, [completedTask.taskId]: rep }));
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to load auxiliary conversation data:", err);
     }
-  }, [activeTask?.id, loadActiveTaskDetails]);
+  }, []);
 
-  // Handle live workflow events from SSE stream
-  const handleWorkflowEvent = useCallback(
-    (event: WorkflowEventResponse) => {
-      if (!activeTask?.id) return;
-
-      // Update subtasks on lifecycle progress
-      if (
-        event.eventType === "SUBTASK_STARTED" ||
-        event.eventType === "SUBTASK_COMPLETED" ||
-        event.eventType === "PLAN_CREATED"
-      ) {
-        api.getSubTasks(activeTask.id).then(setSubtasks).catch(() => {});
-      }
-
-      // Update sources when discovered
-      if (event.eventType === "SOURCE_FOUND") {
-        api.getSources(activeTask.id).then(setActiveSources).catch(() => {});
-      }
-
-      // Update documents when uploaded or indexed
-      if (
-        event.eventType === "DOCUMENT_UPLOADED" ||
-        event.eventType === "DOCUMENT_PROCESSED"
-      ) {
-        api.listDocuments(activeTask.id).then(setAttachedDocs).catch(() => {});
-      }
-
-      // Update report when compiled
-      if (
-        event.eventType === "REPORT_GENERATED" ||
-        event.eventType === "TASK_COMPLETED"
-      ) {
-        loadActiveTaskDetails(activeTask.id);
-        setIsExecuting(false);
-        setActiveTab("report");
-      }
+  // --------------------------------------------------------------------------
+  // Chat Streaming Hook
+  // --------------------------------------------------------------------------
+  const {
+    messages,
+    isLoadingHistory,
+    isStreaming,
+    isDocumentProcessing,
+    activeResearchTaskId: chatHookTaskId,
+    streamError,
+    loadMessages,
+    sendMessage: executeSendMessage,
+    cancelStream,
+  } = useConversationChat({
+    conversationId: activeConversation?.id || null,
+    onResearchQueued: (taskId) => {
+      setActiveResearchTaskId(taskId);
     },
-    [activeTask?.id, loadActiveTaskDetails]
-  );
-
-  // SSE Stream
-  useWorkflowStream({
-    taskId: isExecuting ? activeTask?.id || null : null,
-    enabled: isExecuting,
-    onEvent: handleWorkflowEvent,
-    onCompleted: () => {
-      setIsExecuting(false);
-      if (activeTask?.id) {
-        api.getTask(activeTask.id).then(setActiveTask).catch(() => {});
-        loadActiveTaskDetails(activeTask.id);
-      }
-      refreshTasks(false);
-    },
-    onFailed: () => {
-      setIsExecuting(false);
-      if (activeTask?.id) {
-        api.getTask(activeTask.id).then(setActiveTask).catch(() => {});
-      }
-      refreshTasks(false);
+    onConversationUpdated: () => {
+      loadConversations(false);
     },
   });
 
-  // Polling fallback during execution to ensure 100% sync
+  // Keep activeResearchTaskId in sync with chat hook
   useEffect(() => {
-    if (!isExecuting || !activeTask?.id) return;
+    if (chatHookTaskId) {
+      setActiveResearchTaskId(chatHookTaskId);
+    }
+  }, [chatHookTaskId]);
 
-    const interval = setInterval(async () => {
-      try {
-        const updated = await api.getTask(activeTask.id);
-        setActiveTask(updated);
-        loadActiveTaskDetails(activeTask.id);
-        if (updated.status === "COMPLETED" || updated.status === "FAILED") {
-          setIsExecuting(false);
-          refreshTasks(false);
-        }
-      } catch {
-        // ignore transient errors
+  // --------------------------------------------------------------------------
+  // Autonomous Research Task Polling Hook
+  // --------------------------------------------------------------------------
+  useResearchTask({
+    conversationId: activeConversation?.id || null,
+    taskId: activeResearchTaskId,
+    enabled: Boolean(activeConversation?.id && activeResearchTaskId),
+    pollIntervalMs: 3000,
+    onCompleted: (taskStatus, report) => {
+      if (report) {
+        setReportsMap((prev) => ({ ...prev, [taskStatus.taskId]: report }));
+        setDocNotification(`Research Report ready: "${report.title}"`);
+        setTimeout(() => setDocNotification(null), 8000);
       }
-    }, 3000);
+    },
+    onFailed: (_taskStatus, errorMsg) => {
+      setBackendError(`Research task failed: ${errorMsg}`);
+    },
+  });
 
-    return () => clearInterval(interval);
-  }, [isExecuting, activeTask?.id, loadActiveTaskDetails, refreshTasks]);
+  // Initial Mount
+  useEffect(() => {
+    initializeAuthFromUrl();
 
-  // Execute Inquest
-  const handleExecute = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inquestInput.trim() || isExecuting) return;
-
-    const query = inquestInput.trim();
-    setInquestInput("");
-    setIsExecuting(true);
-    setTraceExpanded(true);
-    setActiveTab("timeline");
-
-    const title = query.length > 54 ? query.slice(0, 52) + "..." : query;
-
-    try {
-      // 1. Create task in backend PostgreSQL
-      const newTask = await api.createTask({
-        title,
-        prompt: query,
-        executionMode,
-        tokenBudget: 35000,
+    api.getCurrentUser()
+      .then((user) => {
+        setCurrentUser(user);
+        setBackendOnline(true);
+      })
+      .catch((err) => {
+        console.warn("Could not fetch user /me:", err);
       });
 
-      // 2. Add to active tasks and select
-      setTasks((prev) => [newTask, ...prev.filter((t) => t.id !== newTask.id)]);
-      setActiveTask(newTask);
-      setSubtasks([]);
-      setActiveReport(null);
-      setActiveSources([]);
-      setBackendOnline(true);
-      setBackendError(null);
+    loadConversations(true);
+  }, [loadConversations]);
 
-      // 3. If files were staged in new chat mode, upload them directly to this new task
-      if (stagedFiles.length > 0) {
-        const filesToUpload = [...stagedFiles];
-        setStagedFiles([]);
-        try {
-          const uploadedDocs = await Promise.all(
-            filesToUpload.map((file) => api.uploadDocument(newTask.id, file))
-          );
-          setAttachedDocs(uploadedDocs);
-          setDocNotification(
-            `${uploadedDocs.length} staged document(s) uploaded and indexed into RAG memory.`
-          );
-          setTimeout(() => setDocNotification(null), 6000);
-        } catch (uploadErr) {
-          console.warn("Failed to upload some staged files:", uploadErr);
-        }
-      } else {
-        setAttachedDocs([]);
-      }
+  // When active conversation changes, load messages and docs
+  useEffect(() => {
+    const convId = activeConversation?.id;
+    if (convId) {
+      loadMessages(convId);
+      loadConversationAuxiliary(convId);
+    }
+  }, [activeConversation?.id, loadMessages, loadConversationAuxiliary]);
 
-      // 4. Trigger execution in Spring Boot
-      await api.executeTask(newTask.id);
+  // Auto-scroll logic
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    isAutoScrollEnabledRef.current = scrollHeight - scrollTop - clientHeight < 80;
+  };
+
+  useEffect(() => {
+    if (isAutoScrollEnabledRef.current && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isStreaming]);
+
+  // --------------------------------------------------------------------------
+  // Conversation CRUD Operations
+  // --------------------------------------------------------------------------
+  const handleCreateConversation = async () => {
+    cancelStream();
+    try {
+      const newConv = await api.createConversation({ title: "New Conversation" });
+      setConversations((prev) => [newConv, ...prev.filter((c) => c.id !== newConv.id)]);
+      setActiveConversation(newConv);
+      setSelectedDocIds([]);
+      setStagedFiles([]);
+      setChatInput("");
     } catch (err: unknown) {
-      console.error("Task execution failed:", err);
-      setIsExecuting(false);
-      setBackendError(err instanceof Error ? err.message : "Execution failed");
+      console.error("Failed to create conversation:", err);
+      setBackendError(err instanceof Error ? err.message : "Failed to create conversation");
     }
   };
 
-  const handleCopyHash = () => {
-    if (!activeTask?.id) return;
-    navigator.clipboard.writeText(activeTask.id);
-    setCopiedHash(true);
-    setTimeout(() => setCopiedHash(false), 2000);
+  const handleUpdateTitle = async (convId: string, newTitle: string) => {
+    if (!newTitle.trim()) {
+      setEditingTitleId(null);
+      return;
+    }
+    try {
+      const updated = await api.updateConversation(convId, { title: newTitle.trim() });
+      setConversations((prev) => prev.map((c) => (c.id === convId ? updated : c)));
+      if (activeConversation?.id === convId) {
+        setActiveConversation(updated);
+      }
+    } catch (err) {
+      console.error("Failed to update conversation title:", err);
+    } finally {
+      setEditingTitleId(null);
+    }
+  };
+
+  const handleDeleteConversation = async (convId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to delete this conversation?")) return;
+
+    cancelStream();
+    try {
+      await api.deleteConversation(convId);
+      const remaining = conversations.filter((c) => c.id !== convId);
+      setConversations(remaining);
+
+      if (activeConversation?.id === convId) {
+        if (remaining.length > 0) {
+          setActiveConversation(remaining[0]);
+        } else {
+          setActiveConversation(null);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete conversation:", err);
+      setBackendError(err instanceof Error ? err.message : "Failed to delete conversation");
+    }
+  };
+
+  // --------------------------------------------------------------------------
+  // Document Selection & Readiness Verification
+  // --------------------------------------------------------------------------
+  const toggleSelectDocument = (docId: string) => {
+    setSelectedDocIds((prev) =>
+      prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]
+    );
+  };
+
+  const removeSelectedDocument = (docId: string) => {
+    setSelectedDocIds((prev) => prev.filter((id) => id !== docId));
+  };
+
+  // --------------------------------------------------------------------------
+  // Send Message Handler
+  // --------------------------------------------------------------------------
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!chatInput.trim() || isStreaming) return;
+
+    const content = chatInput.trim();
+    setChatInput("");
+
+    let targetConv = activeConversation;
+    if (!targetConv) {
+      try {
+        targetConv = await api.createConversation({ title: content.slice(0, 48) });
+        setConversations((prev) => [targetConv!, ...prev]);
+        setActiveConversation(targetConv);
+      } catch {
+        setBackendError("Failed to initialize new conversation");
+        setChatInput(content);
+        return;
+      }
+    }
+
+    let docIdsToSend = [...selectedDocIds];
+    if (stagedFiles.length > 0 && targetConv?.id) {
+      const filesToUpload = [...stagedFiles];
+      setStagedFiles([]);
+      try {
+        const uploadedDocs = await Promise.all(
+          filesToUpload.map((f) => api.uploadConversationDocument(targetConv!.id, f))
+        );
+        setConversationDocs((prev) => [...uploadedDocs, ...prev]);
+        const newIds = uploadedDocs.map((d) => d.id);
+        docIdsToSend = [...docIdsToSend, ...newIds];
+        setSelectedDocIds(docIdsToSend);
+      } catch (uploadErr) {
+        console.warn("Failed to upload staged files:", uploadErr);
+      }
+    }
+
+    if (docIdsToSend.length > 0) {
+      const pendingDocs = conversationDocs.filter(
+        (d) =>
+          docIdsToSend.includes(d.id) &&
+          (d.processingStatus === "PROCESSING" ||
+            d.processingStatus === "UPLOADED" ||
+            d.processingStatus === "PENDING")
+      );
+
+      if (pendingDocs.length > 0) {
+        setDocNotification(
+          `${pendingDocs.length} document(s) are actively processing. AI will proceed once indexing finishes.`
+        );
+      }
+    }
+
+    const isDeep = executionMode === "DEEP_RESEARCH" || docIdsToSend.length > 0;
+
+    try {
+      await executeSendMessage(content, docIdsToSend, isDeep);
+    } catch (sendErr) {
+      console.error("Failed to stream message:", sendErr);
+      setChatInput(content);
+    }
+  };
+
+  const handleViewReport = async (reportId: string, taskId?: string) => {
+    if (taskId && reportsMap[taskId]) {
+      setSelectedReportForModal(reportsMap[taskId]);
+      setIsReportModalOpen(true);
+      return;
+    }
+
+    try {
+      const rep = await api.getReportDetail(reportId);
+      if (taskId) {
+        setReportsMap((prev) => ({ ...prev, [taskId]: rep }));
+      }
+      setSelectedReportForModal(rep);
+      setIsReportModalOpen(true);
+    } catch (err) {
+      console.error("Failed to load report detail:", err);
+      setBackendError("Could not retrieve full research report.");
+    }
   };
 
   const handleCitationClick = (evidenceId: string, citation?: ReportCitationResponse) => {
@@ -315,12 +404,12 @@ function ChatWorkspaceContent() {
     setDrawerCachedCitation(citation || null);
   };
 
-  const filteredTasks = tasks.filter((t) => {
-    const query = searchFilter.toLowerCase();
+  const filteredConversations = conversations.filter((c) => {
+    const q = searchFilter.toLowerCase();
     return (
-      t.title.toLowerCase().includes(query) ||
-      t.prompt.toLowerCase().includes(query) ||
-      t.id.toLowerCase().includes(query)
+      (c.title && c.title.toLowerCase().includes(q)) ||
+      (c.summary && c.summary.toLowerCase().includes(q)) ||
+      c.id.toLowerCase().includes(q)
     );
   });
 
@@ -328,7 +417,7 @@ function ChatWorkspaceContent() {
     <div className="relative flex h-screen w-screen overflow-hidden bg-[#0A0C10] text-[#F8FAFC] font-sans selection:bg-[#D4A373] selection:text-[#090A0D]">
       
       {/* ========================================================
-          LEFT SIDEBAR: INQUEST LEDGER
+          LEFT SIDEBAR: CONVERSATION LEDGER
          ======================================================== */}
       {sidebarOpen ? (
         <aside className="relative z-20 w-80 md:w-84 flex flex-col border-r border-[#1C202A] bg-[#0C0E14] select-none shrink-0 transition-all duration-200">
@@ -345,9 +434,9 @@ function ChatWorkspaceContent() {
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => refreshTasks(false)}
+                onClick={() => loadConversations(false)}
                 className="p-1.5 rounded-md text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#161A22] transition-colors cursor-pointer"
-                title="Refresh sessions from database"
+                title="Refresh conversations"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
@@ -363,19 +452,16 @@ function ChatWorkspaceContent() {
             </div>
           </div>
 
-          {/* Quick Action & Search */}
+          {/* New Conversation Button & Search */}
           <div className="p-3.5 border-b border-[#1C202A] space-y-2.5">
             <button
               type="button"
-              onClick={() => {
-                setActiveTask(null);
-                setInquestInput("");
-              }}
+              onClick={handleCreateConversation}
               className="w-full h-9 px-3 rounded-md bg-[#F8FAFC] hover:bg-[#FFFFFF] text-[#090A0D] text-xs font-semibold tracking-wide flex items-center justify-between transition-colors uppercase cursor-pointer"
             >
               <span className="flex items-center gap-2">
                 <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                New Inquest
+                New Conversation
               </span>
               <kbd className="px-1.5 py-0.5 rounded bg-[#E2E8F0] text-[#090A0D] text-[10px] font-mono">⌘N</kbd>
             </button>
@@ -387,78 +473,116 @@ function ChatWorkspaceContent() {
                 type="text"
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
-                placeholder="Search live inquiries..."
-                className="w-full pl-8 pr-3 py-1.5 rounded-md bg-[#11141C] border border-[#1C202A] text-xs text-[#F8FAFC] placeholder-[#64748B] focus:outline-none focus:border-[#D4A373] transition-colors"
+                placeholder="Search conversations..."
+                className="w-full pl-8 pr-3 py-1.5 rounded-md bg-[#11141C] border border-[#1C202A] text-xs text-[#F8FAFC] placeholder-[#64748B] focus:outline-none focus:border-[#D4A373] transition-colors font-sans"
               />
             </div>
           </div>
 
-          {/* Sessions List */}
+          {/* Conversations List */}
           <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 scrollbar-thin">
             <div className="px-2 py-1 text-[11px] font-mono text-[#64748B] tracking-wider uppercase flex items-center justify-between">
-              <span>Inquest Ledger ({filteredTasks.length})</span>
+              <span>Conversations ({filteredConversations.length})</span>
             </div>
 
-            {filteredTasks.length === 0 ? (
+            {filteredConversations.length === 0 ? (
               <div className="p-6 text-center text-xs font-mono text-[#64748B]">
-                No sessions yet. Submit an inquiry to begin.
+                No conversations yet. Start a new dialogue above.
               </div>
             ) : (
-              filteredTasks.map((task) => {
-                const isActive = task.id === activeTask?.id;
-                const isTaskRunning =
-                  task.status === "RUNNING" ||
-                  task.status === "PLANNING" ||
-                  task.status === "PENDING";
+              filteredConversations.map((conv) => {
+                const isActive = conv.id === activeConversation?.id;
+                const isEditing = editingTitleId === conv.id;
 
                 return (
                   <div
-                    key={task.id}
+                    key={conv.id}
                     onClick={() => {
-                      setActiveTask(task);
-                      loadActiveTaskDetails(task.id);
+                      if (!isActive) {
+                        cancelStream();
+                        setActiveConversation(conv);
+                        setSelectedDocIds([]);
+                      }
                     }}
-                    className={`p-3 rounded-lg cursor-pointer transition-all border ${
+                    className={`group/item p-3 rounded-lg cursor-pointer transition-all border relative ${
                       isActive
                         ? "bg-[#161B26] border-[#D4A373]/40 text-[#F8FAFC]"
                         : "border-transparent text-[#94A3B8] hover:bg-[#11141C] hover:text-[#E2E8F0]"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="font-medium text-xs truncate text-[#F8FAFC]">
-                        {task.title || "Untitled Inquest"}
-                      </span>
-                      {task.status === "COMPLETED" && (
-                        <span className="px-1.5 py-0.2 rounded-full bg-[#10B981]/15 text-[#10B981] text-[9px] font-semibold shrink-0">
-                          VERIFIED
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editTitleValue}
+                          onChange={(e) => setEditTitleValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleUpdateTitle(conv.id, editTitleValue);
+                            if (e.key === "Escape") setEditingTitleId(null);
+                          }}
+                          onBlur={() => handleUpdateTitle(conv.id, editTitleValue)}
+                          autoFocus
+                          className="w-full bg-[#0C0E14] border border-[#D4A373] px-2 py-0.5 rounded text-xs text-[#F8FAFC] focus:outline-none"
+                        />
+                      ) : (
+                        <span className="font-medium text-xs truncate text-[#F8FAFC] max-w-[200px]">
+                          {conv.title || "Untitled Conversation"}
                         </span>
                       )}
-                      {isTaskRunning && (
-                        <span className="px-1.5 py-0.2 rounded-full bg-[#D4A373]/20 text-[#D4A373] text-[9px] font-semibold shrink-0 animate-pulse">
-                          RUNNING
-                        </span>
-                      )}
-                      {task.status === "FAILED" && (
-                        <span className="px-1.5 py-0.2 rounded-full bg-rose-950/40 text-rose-400 text-[9px] font-semibold shrink-0">
-                          FAILED
-                        </span>
-                      )}
+
+                      <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingTitleId(conv.id);
+                            setEditTitleValue(conv.title);
+                          }}
+                          className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                          title="Rename conversation"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteConversation(conv.id, e)}
+                          className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition-colors"
+                          title="Delete conversation"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
 
-                    <p className="text-[11px] text-[#64748B] line-clamp-1 leading-relaxed">
-                      {task.prompt}
-                    </p>
+                    <div className="flex items-center justify-between text-[11px] text-[#64748B]">
+                      <span className="truncate max-w-[180px]">
+                        {conv.summary || "Conversation active"}
+                      </span>
+                      <span suppressHydrationWarning className="font-mono text-[10px] shrink-0">
+                        {conv.lastMessageAt
+                          ? new Date(conv.lastMessageAt).toLocaleDateString([], {
+                              month: "short",
+                              day: "numeric",
+                            })
+                          : isMounted && conv.createdAt
+                          ? new Date(conv.createdAt).toLocaleDateString([], {
+                              month: "short",
+                              day: "numeric",
+                            })
+                          : ""}
+                      </span>
+                    </div>
                   </div>
                 );
               })
             )}
           </div>
 
-          {/* Footer Backend Connectivity Info */}
-          <div className="h-12 px-4 border-t border-[#1C202A] flex items-center justify-between text-xs text-[#64748B]">
-            <div className="flex items-center gap-2">
+          {/* Footer Backend & User Connectivity Info */}
+          <div className="h-14 px-4 border-t border-[#1C202A] flex items-center justify-between text-xs text-[#64748B]">
+            <div className="flex items-center gap-2 overflow-hidden">
               <span
-                className={`w-2 h-2 rounded-full ${
+                className={`w-2 h-2 rounded-full shrink-0 ${
                   backendOnline === true
                     ? "bg-[#10B981]"
                     : backendOnline === false
@@ -466,120 +590,133 @@ function ChatWorkspaceContent() {
                     : "bg-slate-500"
                 }`}
               />
-              <span className="text-[#94A3B8] text-[11px] font-mono">
-                {backendOnline === true
-                  ? "Backend Connected"
-                  : backendOnline === false
-                  ? "Backend Offline"
-                  : "Checking..."}
-              </span>
+              <div className="overflow-hidden">
+                <div className="text-[#94A3B8] text-[11px] font-mono truncate">
+                  {currentUser ? currentUser.name || currentUser.email : "Backend Online"}
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono truncate">
+                  {currentUser?.email || "Ready"}
+                </div>
+              </div>
             </div>
-            <span className="font-mono text-[10px]">
-              {activeTask?.tokensUsed
-                ? `${(activeTask.tokensUsed / 1000).toFixed(1)}k tokens`
-                : "0 tokens"}
+
+            <span className="font-mono text-[10px] text-slate-500 shrink-0">
+              {activeConversation ? "Active" : "Idle"}
             </span>
           </div>
         </aside>
       ) : null}
 
       {/* ========================================================
-          MAIN WORKSPACE
+          MAIN WORKSPACE (CHAT & DOSSIER STREAM)
          ======================================================== */}
       <main className="relative flex-1 flex flex-col h-full overflow-hidden bg-[#0A0C10]">
         
-        {/* Sleek Single-Line Masthead */}
+        {/* Masthead Header */}
         <header className="h-14 px-4 sm:px-8 flex items-center justify-between border-b border-[#1C202A] bg-[#0C0E14]/70 backdrop-blur-md shrink-0">
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 overflow-hidden">
             {!sidebarOpen && (
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="p-1.5 rounded-md text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#161A22] transition-colors mr-1 cursor-pointer"
+                className="p-1.5 rounded-md text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#161A22] transition-colors mr-1 cursor-pointer shrink-0"
                 title="Expand sidebar"
               >
                 <PanelLeft className="w-4 h-4" />
               </button>
             )}
 
-            <div className="flex items-center gap-2 text-xs sm:text-sm font-medium">
-              <span className="text-[#64748B] font-mono truncate max-w-[100px] sm:max-w-[140px]">
-                {activeTask?.id ? `${activeTask.id.slice(0, 8)}...` : "NEW"}
+            <div className="flex items-center gap-2 text-xs sm:text-sm font-medium overflow-hidden">
+              <span className="text-[#64748B] font-mono truncate shrink-0">
+                {activeConversation?.id ? `${activeConversation.id.slice(0, 8)}...` : "NEW"}
               </span>
               <span className="text-[#475569]">/</span>
               <h1 className="text-[#F8FAFC] font-semibold truncate max-w-[240px] sm:max-w-[420px]">
-                {activeTask?.title || "Autonomous Multi-Agent Inquest"}
+                {activeConversation?.title || "Conversational Intelligence"}
               </h1>
             </div>
           </div>
 
           {/* Right Header Actions */}
-          <div className="flex items-center gap-3">
-            {/* Always accessible Attach RAG Docs button */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Attach Documents Button */}
             <button
               type="button"
               onClick={() => setIsDocModalOpen(true)}
               className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer border ${
-                (activeTask ? attachedDocs.length : stagedFiles.length) > 0
+                conversationDocs.length > 0 || stagedFiles.length > 0
                   ? "text-[#D4A373] bg-[#D4A373]/10 border-[#D4A373]/30 hover:bg-[#D4A373]/20"
                   : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#161A22] border-[#1C202A]"
               }`}
-              title={
-                activeTask
-                  ? "Attach documents for RAG grounding"
-                  : "Attach reference documents to ground your upcoming inquiry"
-              }
+              title="Attach documents for RAG context"
             >
               <Paperclip className="w-3.5 h-3.5 text-[#D4A373]" />
-              <span className="hidden sm:inline">Attach RAG Docs</span>
-              {(activeTask ? attachedDocs.length : stagedFiles.length) > 0 && (
+              <span className="hidden sm:inline">RAG Docs</span>
+              {(conversationDocs.length > 0 || stagedFiles.length > 0) && (
                 <span className="px-1.5 py-0.2 rounded-full bg-[#D4A373] text-[#0A0C10] font-bold text-[10px]">
-                  {activeTask ? attachedDocs.length : stagedFiles.length}
+                  {conversationDocs.length || stagedFiles.length}
                 </span>
               )}
             </button>
 
-            {activeTask && (
-              <>
-                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#12151D] border border-[#1C202A] text-xs text-[#94A3B8]">
-                  <span className="w-2 h-2 rounded-full bg-[#D4A373] shadow-[0_0_8px_#D4A373] animate-pulse" />
-                  <span className="hidden sm:inline font-mono text-[11px]">
-                    {activeTask.executionMode}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleCopyHash}
-                  className="px-2.5 py-1 rounded-md text-xs font-mono text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#161A22] border border-[#1C202A] transition-colors flex items-center gap-1.5 cursor-pointer"
-                  title="Copy Task UUID"
-                >
-                  {copiedHash ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-[#10B981]" />
-                      <span className="text-[#10B981]">Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Hash className="w-3.5 h-3.5 text-[#D4A373]" />
-                      <span className="hidden sm:inline">UUID</span>
-                    </>
-                  )}
-                </button>
-              </>
-            )}
+            {/* Deep Research Mode Pill */}
+            <button
+              type="button"
+              onClick={() =>
+                setExecutionMode(
+                  executionMode === "DEEP_RESEARCH" ? "STANDARD" : "DEEP_RESEARCH"
+                )
+              }
+              className={`flex items-center gap-2 px-3 py-1 rounded-full border text-xs cursor-pointer transition-all ${
+                executionMode === "DEEP_RESEARCH"
+                  ? "bg-[#D4A373]/15 border-[#D4A373]/40 text-[#D4A373]"
+                  : "bg-[#12151D] border-[#1C202A] text-slate-400 hover:text-slate-200"
+              }`}
+              title="Toggle Deep Research Mode"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  executionMode === "DEEP_RESEARCH"
+                    ? "bg-[#D4A373] shadow-[0_0_8px_#D4A373] animate-pulse"
+                    : "bg-slate-500"
+                }`}
+              />
+              <span className="font-mono text-[11px] hidden sm:inline">
+                {executionMode}
+              </span>
+            </button>
           </div>
         </header>
 
-        {/* Conversation & Dossier Stream */}
-        <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-8 scrollbar-thin">
-          <div className="max-w-3xl mx-auto space-y-8">
+        {/* Message Stream Area */}
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto px-4 sm:px-8 py-8 scrollbar-thin"
+        >
+          <div className="max-w-3xl mx-auto space-y-6">
             
             {backendError && (
+              <div className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-900/50 text-xs text-rose-300 flex items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+                  <span>{backendError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBackendError(null)}
+                  className="p-1 text-rose-400 hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {streamError && (
               <div className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-900/50 text-xs text-rose-300 flex items-center gap-2.5">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>{backendError}</span>
+                <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+                <span>Stream error: {streamError}</span>
               </div>
             )}
 
@@ -599,310 +736,63 @@ function ChatWorkspaceContent() {
               </div>
             )}
 
-            {activeTask ? (
-              <>
-                {/* 1. Researcher Inquest Message */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs font-mono text-[#64748B]">
-                    <span className="text-[#94A3B8] font-medium flex items-center gap-1.5">
-                      <Terminal className="w-3.5 h-3.5 text-[#D4A373]" />
-                      RESEARCHER INQUIRY
-                    </span>
-                    <span suppressHydrationWarning>
-                      {isMounted && activeTask.createdAt
-                        ? new Date(activeTask.createdAt).toLocaleTimeString()
-                        : ""}
-                    </span>
-                  </div>
-                  <div className="p-5 rounded-xl bg-[#11141C] border border-[#1C202A]">
-                    <p className="text-base sm:text-lg text-[#F8FAFC] leading-relaxed font-normal">
-                      {activeTask.prompt}
-                    </p>
-                  </div>
-                </div>
+            {/* Document Processing Progress Indicator */}
+            {isDocumentProcessing && (
+              <div className="p-3.5 rounded-xl bg-[#0F131C] border border-[#D4A373]/30 text-xs text-[#D4A373] flex items-center gap-3 animate-pulse">
+                <Loader2 className="w-4 h-4 animate-spin text-[#D4A373] shrink-0" />
+                <span className="font-mono">
+                  Vectorizing and indexing attached documents into RAG memory...
+                </span>
+              </div>
+            )}
 
-                {/* 1.5. Attached Knowledge Corpus Shelf */}
-                {attachedDocs.length > 0 && (
-                  <div className="p-3 rounded-xl bg-[#0F131C] border border-[#D4A373]/25 flex items-center justify-between gap-3 text-xs">
-                    <div className="flex items-center gap-2.5 overflow-hidden">
-                      <Paperclip className="w-3.5 h-3.5 text-[#D4A373] shrink-0" />
-                      <span className="font-mono text-[11px] text-[#94A3B8] shrink-0">
-                        Corpus Linked:
-                      </span>
-                      <div className="flex items-center gap-1.5 flex-wrap overflow-hidden">
-                        {attachedDocs.map((doc) => {
-                          const isReady =
-                            doc.processingStatus === "READY" ||
-                            doc.processingStatus === "COMPLETED";
-                          return (
-                            <span
-                              key={doc.id}
-                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#161B26] border border-[#1C202A] text-[11px] font-mono text-[#F8FAFC]"
-                            >
-                              <FileText className="w-3 h-3 text-[#D4A373]" />
-                              <span className="truncate max-w-[140px]">{doc.fileName}</span>
-                              {isReady ? (
-                                <span className="text-emerald-400 font-bold text-[9px]">● READY</span>
-                              ) : (
-                                <span className="text-[#D4A373] text-[9px] animate-pulse">● INDEXING</span>
-                              )}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("documents")}
-                      className="text-[11px] font-mono text-[#D4A373] hover:underline shrink-0 cursor-pointer"
-                    >
-                      View All &rarr;
-                    </button>
-                  </div>
-                )}
-
-                {/* 2. Multi-Agent Pipeline Accordion */}
-                <div className="rounded-xl border border-[#1C202A] bg-[#0E1118] overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setTraceExpanded(!traceExpanded)}
-                    className="w-full p-3.5 sm:p-4 flex items-center justify-between text-xs font-mono transition-colors hover:bg-[#121620] cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      {isExecuting ? (
-                        <Clock className="w-4 h-4 text-[#D4A373] animate-spin" />
-                      ) : activeTask.status === "COMPLETED" ? (
-                        <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-                      ) : (
-                        <AlertCircle className="w-4 h-4 text-rose-400" />
-                      )}
-                      <span className="font-semibold text-[#F8FAFC]">
-                        Autonomous Multi-Agent Pipeline
-                      </span>
-                      <span className="text-[#64748B]">
-                        · {subtasks.filter((s) => s.status === "COMPLETED").length}/{subtasks.length} subtasks
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 text-[#94A3B8]">
-                      <span className="text-[11px] text-[#64748B]">
-                        {traceExpanded ? "Hide trace" : "View trace"}
-                      </span>
-                      {traceExpanded ? (
-                        <ChevronDown className="w-4 h-4" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4" />
-                      )}
-                    </div>
-                  </button>
-
-                  {traceExpanded && (
-                    <div className="p-4 pt-2 border-t border-[#1C202A]">
-                      <SubtaskTimeline subtasks={subtasks} />
-                    </div>
-                  )}
-                </div>
-
-                {/* 2.5 AI Response Banner */}
-                <div className="flex items-center justify-between text-xs font-mono text-[#64748B] pt-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#D4A373] shadow-[0_0_8px_#D4A373] animate-pulse" />
-                    <span className="text-[#F8FAFC] font-semibold tracking-wider uppercase flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-[#D4A373]" />
-                      Nymbus Research Intelligence
-                    </span>
-                    <span className="text-slate-600">·</span>
-                    <span className="text-[#D4A373] font-medium text-[11px]">
-                      {activeReport ? "Verified Dossier" : isExecuting ? "Synthesizing Report" : "Execution Finished"}
-                    </span>
-                  </div>
-                  <span suppressHydrationWarning className="text-[11px] text-slate-400">
-                    {isMounted && activeReport?.completedAt
-                      ? `Synthesized at ${new Date(activeReport.completedAt).toLocaleTimeString()}`
-                      : isMounted && activeTask.completedAt
-                      ? `Completed at ${new Date(activeTask.completedAt).toLocaleTimeString()}`
-                      : isExecuting
-                      ? "Swarm actively executing..."
-                      : ""}
-                  </span>
-                </div>
-
-                {/* 3. Navigation Tabs */}
-                <div className="flex items-center gap-2 border-b border-[#1C202A] pb-2 text-xs font-mono">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("report")}
-                    className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
-                      activeTab === "report"
-                        ? "bg-[#D4A373]/15 text-[#D4A373] border border-[#D4A373]/30"
-                        : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Synthesized Dossier</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("sources")}
-                    className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
-                      activeTab === "sources"
-                        ? "bg-[#D4A373]/15 text-[#D4A373] border border-[#D4A373]/30"
-                        : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    <Globe className="w-3.5 h-3.5" />
-                    <span>Retrieved Sources ({activeSources.length})</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("documents")}
-                    className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer ${
-                      activeTab === "documents"
-                        ? "bg-[#D4A373]/15 text-[#D4A373] border border-[#D4A373]/30"
-                        : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    <Paperclip className="w-3.5 h-3.5" />
-                    <span>Attached Corpus ({attachedDocs.length})</span>
-                  </button>
-                </div>
-
-                {/* 4. Tab Content */}
-                {activeTab === "report" && (
-                  activeReport ? (
-                    <ReportSectionViewer
-                      report={activeReport}
-                      onCitationClick={handleCitationClick}
-                    />
-                  ) : isExecuting ? (
-                    <div className="p-8 sm:p-10 border border-[#D4A373]/30 rounded-2xl bg-gradient-to-b from-[#11151F] to-[#0A0D14] space-y-6 shadow-xl relative overflow-hidden">
-                      <div className="absolute top-0 right-0 w-64 h-64 bg-[#D4A373]/5 rounded-full blur-3xl pointer-events-none" />
-                      
-                      <div className="flex flex-col items-center justify-center text-center space-y-3">
-                        <div className="relative">
-                          <div className="w-12 h-12 rounded-2xl bg-[#D4A373]/10 border border-[#D4A373]/30 flex items-center justify-center text-[#D4A373]">
-                            <Clock className="w-6 h-6 text-[#D4A373] animate-spin" />
-                          </div>
-                          <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0A0D14] animate-ping" />
-                        </div>
-                        <div className="space-y-1">
-                          <h3 className="text-base sm:text-lg font-bold text-[#F8FAFC]">
-                            Autonomous Multi-Agent Swarm In Progress
-                          </h3>
-                          <p className="text-xs text-slate-400 max-w-lg mx-auto leading-relaxed">
-                            Orchestrator decomposing subtasks, querying live web indexes, isolating verbatim source passages, and compiling cryptographic citation proofs.
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Swarm Stage Pills */}
-                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-2 text-xs font-mono">
-                        <div className="p-3 rounded-xl bg-[#131722] border border-sky-500/30 text-sky-300 flex items-center gap-2.5">
-                          <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
-                          <span className="truncate">1. Decomposition</span>
-                        </div>
-                        <div className="p-3 rounded-xl bg-[#131722] border border-[#D4A373]/30 text-[#D4A373] flex items-center gap-2.5">
-                          <span className="w-2 h-2 rounded-full bg-[#D4A373] animate-pulse" />
-                          <span className="truncate">2. Evidence Crawl</span>
-                        </div>
-                        <div className="p-3 rounded-xl bg-[#131722] border border-amber-500/30 text-amber-300 flex items-center gap-2.5">
-                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                          <span className="truncate">3. NLI Verification</span>
-                        </div>
-                        <div className="p-3 rounded-xl bg-[#131722] border border-emerald-500/30 text-emerald-300 flex items-center gap-2.5">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                          <span className="truncate">4. Dossier Synthesis</span>
-                        </div>
-                      </div>
-
-                      {/* Subtask Status Pill */}
-                      {subtasks.length > 0 && (
-                        <div className="flex items-center justify-between text-xs font-mono text-slate-400 pt-2 border-t border-[#1C202A]">
-                          <span>
-                            Progress: {subtasks.filter((s) => s.status === "COMPLETED").length} of {subtasks.length} subtasks completed
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setTraceExpanded(true)}
-                            className="text-[#D4A373] hover:underline cursor-pointer"
-                          >
-                            Inspect live DAG &rarr;
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ) : activeTask.status === "FAILED" ? (
-                    <div className="p-8 border border-rose-900/50 rounded-2xl bg-rose-950/20 text-center space-y-3">
-                      <div className="w-10 h-10 mx-auto rounded-xl bg-rose-950/40 border border-rose-800/50 flex items-center justify-center text-rose-400">
-                        <AlertCircle className="w-5 h-5" />
-                      </div>
-                      <h3 className="text-sm font-semibold text-rose-200">
-                        Inquest Execution Failed
-                      </h3>
-                      <p className="text-xs text-rose-300/80 max-w-md mx-auto font-mono">
-                        {activeTask.failureReason || "The execution encountered an unexpected error."}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="p-10 border border-[#1C202A] rounded-2xl bg-[#090A0D] text-center space-y-3">
-                      <div className="w-10 h-10 mx-auto rounded-xl bg-[#141822] border border-[#1C202A] flex items-center justify-center text-slate-400">
-                        <FileText className="w-5 h-5 text-[#D4A373]" />
-                      </div>
-                      <h4 className="text-sm font-semibold text-[#F8FAFC]">No Dossier Generated Yet</h4>
-                      <p className="text-xs text-slate-400 max-w-md mx-auto font-mono">
-                        This inquiry completed with {subtasks.length} subtask(s). View the timeline tab or source ledger to explore the extracted findings.
-                      </p>
-                      <div className="pt-1">
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab("timeline" as any)}
-                          className="px-3.5 py-1.5 rounded-lg bg-[#141822] hover:bg-[#1A202C] text-[#D4A373] border border-[#D4A373]/30 text-xs font-mono transition-colors cursor-pointer"
-                        >
-                          View Subtask Timeline &rarr;
-                        </button>
-                      </div>
-                    </div>
-                  )
-                )}
-
-                {activeTab === "sources" && (
-                  <SourcesLedger sources={activeSources} />
-                )}
-
-                {activeTab === "documents" && (
-                  <AttachedCorpusViewer
-                    taskId={activeTask.id}
-                    documents={attachedDocs}
-                    onOpenUpload={() => setIsDocModalOpen(true)}
+            {/* Render Message History */}
+            {messages.length > 0 ? (
+              <div className="space-y-6">
+                {messages.map((msg, idx) => (
+                  <ChatMessageItem
+                    key={msg.id}
+                    message={msg}
+                    isStreaming={isStreaming && idx === messages.length - 1 && msg.role === "ASSISTANT"}
+                    onCitationClick={handleCitationClick}
+                    onViewReport={handleViewReport}
+                    onRetry={(content) => {
+                      executeSendMessage(content, selectedDocIds, executionMode === "DEEP_RESEARCH");
+                    }}
+                    reportDetailsMap={reportsMap}
                   />
-                )}
-              </>
+                ))}
+              </div>
+            ) : isLoadingHistory ? (
+              <div className="py-20 text-center space-y-3">
+                <Loader2 className="w-8 h-8 mx-auto text-[#D4A373] animate-spin" />
+                <p className="text-xs font-mono text-slate-400">Loading conversation history...</p>
+              </div>
             ) : (
-              /* Clean Ready / Empty State */
               <div className="py-16 text-center space-y-6">
                 <div className="w-12 h-12 mx-auto rounded-2xl bg-[#D4A373]/10 border border-[#D4A373]/30 flex items-center justify-center text-[#D4A373]">
                   <Sparkles className="w-6 h-6" />
                 </div>
                 <div className="space-y-3 max-w-md mx-auto">
                   <h2 className="text-xl font-bold tracking-tight text-[#F8FAFC]">
-                    Autonomous Multi-Agent Inquest
+                    Nymbus Research Intelligence
                   </h2>
                   <p className="text-xs text-slate-400 leading-relaxed font-mono">
-                    Enter a scientific, empirical, or complex hypothesis below. The swarm decomposes subtasks, searches Tavily &amp; vector stores, validates verbatim citations, and locks findings to proof.
+                    Enter any complex scientific hypothesis or research topic. Nymbus queries live web indexes,
+                    ingests proprietary documents, plans execution graphs, and compiles cryptographically verifiable proofs.
                   </p>
 
-                  {/* Quick Action to Attach Documents for new chat */}
-                  <div className="pt-2 flex items-center justify-center">
+                  <div className="pt-2 flex items-center justify-center gap-2">
                     <button
                       type="button"
                       onClick={() => setIsDocModalOpen(true)}
                       className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-[#141822] hover:bg-[#1C2230] text-[#D4A373] border border-[#D4A373]/30 text-xs font-mono transition-all cursor-pointer shadow-md hover:border-[#D4A373]/60 group"
                     >
                       <Paperclip className="w-3.5 h-3.5 text-[#D4A373] group-hover:rotate-45 transition-transform" />
-                      <span>Attach Reference Documents (RAG)</span>
-                      {stagedFiles.length > 0 && (
+                      <span>Attach Documents (RAG)</span>
+                      {selectedDocIds.length > 0 && (
                         <span className="px-1.5 py-0.2 rounded-full bg-[#D4A373] text-[#0A0C10] font-bold text-[10px]">
-                          {stagedFiles.length} staged
+                          {selectedDocIds.length}
                         </span>
                       )}
                     </button>
@@ -911,39 +801,57 @@ function ChatWorkspaceContent() {
               </div>
             )}
 
+            <div ref={messagesEndRef} />
           </div>
         </div>
 
         {/* ========================================================
-            FLOATING COMMAND DOCK
+            FLOATING COMMAND DOCK & CHAT INPUT
            ======================================================== */}
         <div className="p-4 sm:p-6 bg-gradient-to-t from-[#0A0C10] via-[#0A0C10]/95 to-transparent shrink-0">
-          <form onSubmit={handleExecute} className="max-w-3xl mx-auto space-y-2.5">
+          <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto space-y-2.5">
             
-            {/* Staged Documents Shelf for New Inquest */}
-            {stagedFiles.length > 0 && (
+            {/* Selected Documents Shelf */}
+            {(selectedDocIds.length > 0 || stagedFiles.length > 0) && (
               <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#121620] border border-[#D4A373]/30 text-xs">
                 <div className="flex items-center gap-2 overflow-hidden">
                   <Paperclip className="w-3.5 h-3.5 text-[#D4A373] shrink-0" />
                   <span className="font-mono text-[11px] text-[#94A3B8] shrink-0">
-                    Staged for Inquest ({stagedFiles.length}):
+                    Attached Corpus ({selectedDocIds.length + stagedFiles.length}):
                   </span>
                   <div className="flex items-center gap-1.5 flex-wrap overflow-hidden">
+                    {conversationDocs
+                      .filter((d) => selectedDocIds.includes(d.id))
+                      .map((doc) => (
+                        <span
+                          key={doc.id}
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#161B26] border border-[#1C202A] text-[11px] font-mono text-[#F8FAFC]"
+                        >
+                          <FileText className="w-3 h-3 text-[#D4A373]" />
+                          <span className="truncate max-w-[130px]">{doc.fileName || doc.filename}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeSelectedDocument(doc.id)}
+                            className="text-slate-500 hover:text-rose-400 font-bold ml-1 cursor-pointer"
+                            title="Remove attachment"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+
                     {stagedFiles.map((file, idx) => (
                       <span
-                        key={idx}
-                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#161B26] border border-[#1C202A] text-[11px] font-mono text-[#F8FAFC]"
+                        key={`staged-${idx}`}
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#161B26] border border-[#D4A373]/30 text-[11px] font-mono text-[#D4A373]"
                       >
                         <FileText className="w-3 h-3 text-[#D4A373]" />
-                        <span className="truncate max-w-[130px]">{file.name}</span>
-                        <span className="text-[10px] text-slate-500">
-                          ({(file.size / 1024).toFixed(0)} KB)
-                        </span>
+                        <span className="truncate max-w-[130px]">{file.name} (Staged)</span>
                         <button
                           type="button"
                           onClick={() => setStagedFiles((prev) => prev.filter((_, i) => i !== idx))}
                           className="text-slate-500 hover:text-rose-400 font-bold ml-1 cursor-pointer"
-                          title="Remove file"
+                          title="Remove staged file"
                         >
                           ×
                         </button>
@@ -951,12 +859,13 @@ function ChatWorkspaceContent() {
                     ))}
                   </div>
                 </div>
+
                 <button
                   type="button"
                   onClick={() => setIsDocModalOpen(true)}
                   className="text-[11px] font-mono text-[#D4A373] hover:underline shrink-0 cursor-pointer"
                 >
-                  Add More +
+                  Manage +
                 </button>
               </div>
             )}
@@ -975,79 +884,72 @@ function ChatWorkspaceContent() {
                 </button>
               </div>
 
-              <input
-                type="text"
-                value={inquestInput}
-                onChange={(e) => setInquestInput(e.target.value)}
-                placeholder="Ask an empirical research question or request proof..."
-                disabled={isExecuting}
-                className="w-full py-3.5 pr-32 bg-transparent text-sm text-[#F8FAFC] placeholder-[#64748B] focus:outline-none font-sans"
+              <textarea
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+                rows={1}
+                placeholder="Ask an empirical research question or request verified proof... (Enter to send, Shift+Enter for newline)"
+                disabled={isStreaming}
+                className="w-full py-3.5 pr-28 sm:pr-32 bg-transparent text-sm text-[#F8FAFC] placeholder-[#64748B] focus:outline-none font-sans resize-none max-h-32"
               />
 
-              {/* Execution Mode Dropdown / Button */}
+              {/* Action Buttons */}
               <div className="absolute right-2 flex items-center gap-1.5">
                 <button
-                  type="button"
-                  onClick={() =>
-                    setExecutionMode(
-                      executionMode === "DEEP_RESEARCH" ? "STANDARD" : "DEEP_RESEARCH"
-                    )
-                  }
-                  className="px-2 py-1 rounded text-[10px] font-mono border border-[#1C202A] text-slate-400 hover:text-[#D4A373] hover:border-[#D4A373]/40 transition-colors hidden sm:block cursor-pointer"
-                  title="Toggle Execution Mode"
-                >
-                  {executionMode}
-                </button>
-
-                <button
                   type="submit"
-                  disabled={isExecuting || !inquestInput.trim()}
-                  className="px-3.5 py-1.5 rounded-lg bg-[#F8FAFC] hover:bg-[#FFFFFF] disabled:bg-[#1C202A] disabled:text-[#64748B] text-[#090A0D] font-mono text-xs font-bold transition-all flex items-center gap-1.5 uppercase cursor-pointer"
+                  disabled={isStreaming || !chatInput.trim()}
+                  className="px-3 py-1.5 rounded-lg bg-[#F8FAFC] hover:bg-[#FFFFFF] disabled:bg-[#1C202A] disabled:text-[#64748B] text-[#090A0D] font-mono text-xs font-bold transition-all flex items-center gap-1.5 uppercase cursor-pointer"
                 >
-                  {isExecuting ? (
+                  {isStreaming ? (
                     <>
-                      <Clock className="w-3.5 h-3.5 animate-spin" />
-                      <span>In-Flight</span>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span className="hidden sm:inline">Streaming</span>
                     </>
                   ) : (
                     <>
-                      <span>Execute</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Send</span>
+                      <Send className="w-3.5 h-3.5" />
                     </>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Presets Row */}
-            <div className="flex items-center gap-2 overflow-x-auto text-xs text-[#64748B]">
+            {/* Quick Prompt Presets */}
+            <div className="flex items-center gap-2 overflow-x-auto text-xs text-[#64748B] scrollbar-none">
               <span className="text-[11px] font-mono shrink-0">Try:</span>
               <button
                 type="button"
                 onClick={() =>
-                  setInquestInput("Verify critical current density scaling in YBCO tapes under 15T background field.")
+                  setChatInput("What are the latest verified technical milestones achieved by Commonwealth Fusion Systems and Helion Energy?")
                 }
-                className="px-2.5 py-0.5 rounded-full bg-[#141822] hover:bg-[#1C2230] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#1C202A] whitespace-nowrap transition-colors cursor-pointer"
+                className="px-2.5 py-0.5 rounded-full bg-[#141822] hover:bg-[#1C2230] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#1C202A] whitespace-nowrap transition-colors cursor-pointer font-mono text-[11px]"
               >
-                YBCO Jc Scaling
+                Fusion Energy Milestones
               </button>
               <button
                 type="button"
                 onClick={() =>
-                  setInquestInput("Check off-target Cas12a trans-cleavage rates across human non-coding introns.")
+                  setChatInput("Analyze critical current density scaling in YBCO superconducting tapes under high Lorentz forces.")
                 }
-                className="px-2.5 py-0.5 rounded-full bg-[#141822] hover:bg-[#1C2230] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#1C202A] whitespace-nowrap transition-colors cursor-pointer"
+                className="px-2.5 py-0.5 rounded-full bg-[#141822] hover:bg-[#1C2230] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#1C202A] whitespace-nowrap transition-colors cursor-pointer font-mono text-[11px]"
               >
-                Cas12a Introns
+                YBCO Superconductors
               </button>
               <button
                 type="button"
                 onClick={() =>
-                  setInquestInput("Validate Helium-3 lunar pyroxene abundance vs volcanic basalt extraction yields.")
+                  setChatInput("Check off-target Cas12a trans-cleavage rates across human non-coding introns.")
                 }
-                className="px-2.5 py-0.5 rounded-full bg-[#141822] hover:bg-[#1C2230] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#1C202A] whitespace-nowrap transition-colors cursor-pointer"
+                className="px-2.5 py-0.5 rounded-full bg-[#141822] hover:bg-[#1C2230] text-[#94A3B8] hover:text-[#F8FAFC] border border-[#1C202A] whitespace-nowrap transition-colors cursor-pointer font-mono text-[11px]"
               >
-                He-3 Regolith
+                Cas12a Cleavage
               </button>
             </div>
           </form>
@@ -1067,26 +969,40 @@ function ChatWorkspaceContent() {
       />
 
       {/* ========================================================
-          DOCUMENT UPLOAD MODAL (RAG)
+          DOCUMENT UPLOAD MODAL (CONVERSATION RAG)
          ======================================================== */}
       <DocumentUploadModal
-        taskId={activeTask?.id || null}
+        conversationId={activeConversation?.id || null}
         isOpen={isDocModalOpen}
         onClose={() => setIsDocModalOpen(false)}
+        selectedDocumentIds={selectedDocIds}
+        onToggleSelectDocument={toggleSelectDocument}
         stagedFiles={stagedFiles}
         onStageFiles={(files) => setStagedFiles((prev) => [...prev, ...files])}
         onRemoveStagedFile={(idx) => setStagedFiles((prev) => prev.filter((_, i) => i !== idx))}
         onUploaded={(doc) => {
-          setAttachedDocs((prev) => [doc, ...prev.filter((d) => d.id !== doc.id)]);
-          setDocNotification(
-            `Document "${doc.fileName}" attached and indexed for this inquest. Agent reasoning will query it.`
-          );
-          setActiveTab("documents");
-          if (activeTask?.id) {
-            api.getSources(activeTask.id).then(setActiveSources).catch(() => {});
+          setConversationDocs((prev) => [doc, ...prev.filter((d) => d.id !== doc.id)]);
+          if (!selectedDocIds.includes(doc.id)) {
+            setSelectedDocIds((prev) => [...prev, doc.id]);
           }
+          setDocNotification(
+            `Document "${doc.fileName || doc.filename}" attached. Embedding pipeline is indexing chunks.`
+          );
           setTimeout(() => setDocNotification(null), 6000);
         }}
+      />
+
+      {/* ========================================================
+          RESEARCH REPORT VIEWER MODAL
+         ======================================================== */}
+      <ResearchReportModal
+        report={selectedReportForModal}
+        isOpen={isReportModalOpen}
+        onClose={() => {
+          setIsReportModalOpen(false);
+          setSelectedReportForModal(null);
+        }}
+        onCitationClick={handleCitationClick}
       />
 
     </div>

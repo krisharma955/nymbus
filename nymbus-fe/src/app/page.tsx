@@ -105,7 +105,7 @@ export default function LandingPage() {
                   NYMBUS
                 </span>
                 <span className="text-[#64748B] text-[11px] hidden sm:inline">
-                  // SPATIAL PROVENANCE LEDGER
+                  {"// SPATIAL PROVENANCE LEDGER"}
                 </span>
               </Link>
             </div>
@@ -446,7 +446,7 @@ export default function LandingPage() {
                 >
                   <div>
                     <div className="text-[10px] text-[#D4A373] font-bold">
-                      0{i + 1} // {agent.id}
+                      0{i + 1} {"//"} {agent.id}
                     </div>
                     <div className="text-xs text-[#F8FAFC] font-bold mt-0.5">{agent.name}</div>
                     <div className="text-[10px] text-[#94A3B8] font-sans mt-1">

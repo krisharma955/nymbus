@@ -78,6 +78,7 @@ export function useWorkflowStream({
     if (!taskId || !enabled) return;
 
     cleanup();
+    setEvents([]);
 
     const url = new URL(`/api/research-tasks/${taskId}/stream`, window.location.origin);
     if (lastEventIdRef.current) {
@@ -155,7 +156,6 @@ export function useWorkflowStream({
 
   useEffect(() => {
     if (taskId && enabled) {
-      setEvents([]);
       lastEventIdRef.current = null;
       connect();
     } else {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   X,
   UploadCloud,
@@ -9,25 +9,32 @@ import {
   AlertCircle,
   Loader2,
   Trash2,
+  Check,
 } from "lucide-react";
-import { DocumentResponse } from "@/types/nymbus";
+import { DocumentResponse, DocumentProcessingStatus } from "@/types/nymbus";
 import { api } from "@/lib/api";
 
 interface DocumentUploadModalProps {
-  taskId: string | null;
+  conversationId?: string | null;
+  taskId?: string | null;
   isOpen: boolean;
   onClose: () => void;
   onUploaded?: (doc: DocumentResponse) => void;
+  selectedDocumentIds?: string[];
+  onToggleSelectDocument?: (docId: string) => void;
   stagedFiles?: File[];
   onStageFiles?: (files: File[]) => void;
   onRemoveStagedFile?: (index: number) => void;
 }
 
 export function DocumentUploadModal({
+  conversationId,
   taskId,
   isOpen,
   onClose,
   onUploaded,
+  selectedDocumentIds = [],
+  onToggleSelectDocument,
   stagedFiles = [],
   onStageFiles,
   onRemoveStagedFile,
@@ -38,31 +45,43 @@ export function DocumentUploadModal({
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<boolean>(false);
 
-  const fetchDocs = React.useCallback(async () => {
-    if (!taskId) return;
+  const activeId = conversationId || taskId;
+
+  const fetchDocs = useCallback(async () => {
+    if (!activeId) return;
     try {
-      const list = await api.listDocuments(taskId);
-      setDocuments(list);
+      if (conversationId) {
+        const list = await api.listConversationDocuments(conversationId);
+        setDocuments(list);
+      } else if (taskId) {
+        const list = await api.listDocuments(taskId);
+        setDocuments(list);
+      }
     } catch (err) {
       console.warn("Failed to load documents:", err);
     }
-  }, [taskId]);
+  }, [conversationId, taskId, activeId]);
 
   useEffect(() => {
-    if (!isOpen || !taskId) return;
+    if (!isOpen || !activeId) return;
     fetchDocs();
-  }, [isOpen, taskId, fetchDocs]);
+  }, [isOpen, activeId, fetchDocs]);
 
   // Auto-poll if any document is in UPLOADED or PROCESSING status
   useEffect(() => {
-    if (!isOpen || !taskId) return;
+    if (!isOpen || !activeId) return;
 
-    const hasPending = documents.some(
-      (d) =>
-        d.processingStatus === "UPLOADED" ||
-        d.processingStatus === "PROCESSING" ||
-        d.processingStatus === "PENDING"
-    );
+    const hasPending = documents.some((d) => {
+      const status = d.processingStatus;
+      return (
+        status === "UPLOADED" ||
+        status === "PROCESSING" ||
+        status === "PENDING" ||
+        status === "PARSING" ||
+        status === "CHUNKING" ||
+        status === "EMBEDDING"
+      );
+    });
 
     if (!hasPending) return;
 
@@ -71,7 +90,7 @@ export function DocumentUploadModal({
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [isOpen, taskId, documents, fetchDocs]);
+  }, [isOpen, activeId, documents, fetchDocs]);
 
   if (!isOpen) return null;
 
@@ -82,29 +101,54 @@ export function DocumentUploadModal({
     setUploadError(null);
     setUploadSuccess(null);
 
-    // If new inquest mode (no taskId yet), stage files in parent
-    if (!taskId) {
-      onStageFiles?.(fileList);
-      setUploadSuccess(
-        fileList.length === 1
-          ? `"${fileList[0].name}" staged for upcoming inquest.`
-          : `${fileList.length} files staged for upcoming inquest.`
+    // Filter by allowed file extensions: .pdf, .txt, .md
+    const allowedExtensions = [".pdf", ".txt", ".md"];
+    const invalidFiles = fileList.filter((f) => {
+      const name = f.name.toLowerCase();
+      return !allowedExtensions.some((ext) => name.endsWith(ext));
+    });
+
+    if (invalidFiles.length > 0) {
+      setUploadError(
+        `Unsupported file type(s): ${invalidFiles.map((f) => f.name).join(", ")}. Only PDF, TXT, and Markdown files are supported.`
       );
       return;
     }
 
-    // Otherwise, direct upload to active task
-    setIsUploading(true);
-    try {
-      for (const file of fileList) {
-        const doc = await api.uploadDocument(taskId, file);
-        setDocuments((prev) => [doc, ...prev.filter((d) => d.id !== doc.id)]);
-        onUploaded?.(doc);
-      }
+    // If no active conversation/task yet, stage files in parent
+    if (!activeId) {
+      onStageFiles?.(fileList);
       setUploadSuccess(
         fileList.length === 1
-          ? `"${fileList[0].name}" attached successfully! Vector embedding pipeline is indexing it.`
-          : `${fileList.length} documents attached and queued for vectorization.`
+          ? `"${fileList[0].name}" staged for upcoming message.`
+          : `${fileList.length} files staged for upcoming message.`
+      );
+      return;
+    }
+
+    // Direct upload
+    setIsUploading(true);
+    try {
+      const uploadedDocs: DocumentResponse[] = [];
+      for (const file of fileList) {
+        let doc: DocumentResponse;
+        if (conversationId) {
+          doc = await api.uploadConversationDocument(conversationId, file);
+        } else {
+          doc = await api.uploadDocument(taskId!, file);
+        }
+        uploadedDocs.push(doc);
+        setDocuments((prev) => [doc, ...prev.filter((d) => d.id !== doc.id)]);
+        onUploaded?.(doc);
+        // Automatically select the freshly uploaded document if selector provided
+        if (onToggleSelectDocument && !selectedDocumentIds.includes(doc.id)) {
+          onToggleSelectDocument(doc.id);
+        }
+      }
+      setUploadSuccess(
+        uploadedDocs.length === 1
+          ? `"${uploadedDocs[0].fileName}" uploaded successfully. Processing document into RAG memory...`
+          : `${uploadedDocs.length} documents uploaded and queued for processing.`
       );
       setTimeout(fetchDocs, 1200);
     } catch (err: unknown) {
@@ -128,34 +172,55 @@ export function DocumentUploadModal({
     }
   };
 
+  const getStatusLabel = (status: DocumentProcessingStatus) => {
+    switch (status) {
+      case "READY":
+      case "COMPLETED":
+        return { label: "Ready", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" };
+      case "FAILED":
+        return { label: "Failed", color: "text-rose-400 bg-rose-500/10 border-rose-500/20" };
+      case "CHUNKING":
+        return { label: "Chunking...", color: "text-[#D4A373] bg-[#D4A373]/10 border-[#D4A373]/20 animate-pulse" };
+      case "EMBEDDING":
+        return { label: "Embedding...", color: "text-[#D4A373] bg-[#D4A373]/10 border-[#D4A373]/20 animate-pulse" };
+      case "PARSING":
+        return { label: "Parsing...", color: "text-[#D4A373] bg-[#D4A373]/10 border-[#D4A373]/20 animate-pulse" };
+      case "PROCESSING":
+      case "UPLOADED":
+      case "PENDING":
+      default:
+        return { label: "Processing...", color: "text-[#D4A373] bg-[#D4A373]/10 border-[#D4A373]/20 animate-pulse" };
+    }
+  };
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150"
     >
-      <div className="w-full max-w-xl bg-[#0E1015] border border-[#1C202A] rounded-xl shadow-2xl overflow-hidden flex flex-col">
+      <div className="w-full max-w-xl bg-[#0E1015] border border-[#1C202A] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Modal Header */}
         <div className="flex items-center justify-between p-4 border-b border-[#1C202A] bg-[#090A0D]">
           <div className="flex items-center gap-2">
             <UploadCloud className="w-4 h-4 text-[#D4A373]" />
             <h3 className="text-sm font-semibold text-[#F8FAFC]">
-              Attach Corpus Documents (RAG)
+              Attach Documents (RAG Intelligence)
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-5 space-y-4">
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Upload research papers, PDFs, or internal dossiers. Documents will be chunked,
-            embedded, and queried alongside web sources for verifiable claim extraction.
+        <div className="p-5 space-y-4 overflow-y-auto">
+          <p className="text-xs text-slate-400 leading-relaxed font-sans">
+            Upload PDF, TXT, or Markdown documents to attach to this conversation. Documents are
+            automatically chunked, embedded, and queried by AI agents for verifiable, grounded answers.
           </p>
 
           {/* Dropzone */}
@@ -176,7 +241,7 @@ export function DocumentUploadModal({
               type="file"
               className="hidden"
               multiple
-              accept=".pdf,.txt,.md,.doc,.docx"
+              accept=".pdf,.txt,.md"
               onChange={handleFileChange}
               disabled={isUploading}
             />
@@ -192,9 +257,7 @@ export function DocumentUploadModal({
                   Click to browse or drag and drop document(s)
                 </span>
                 <span className="text-[11px] font-mono text-slate-400">
-                  {taskId
-                    ? "PDF, TXT, Markdown, DOCX (Immediate RAG Ingestion)"
-                    : "Stage files to ground your upcoming new inquest"}
+                  Supported formats: PDF, TXT, Markdown (.md)
                 </span>
               </>
             )}
@@ -202,25 +265,25 @@ export function DocumentUploadModal({
 
           {uploadSuccess && (
             <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-xs text-emerald-300 flex items-center gap-2.5 animate-in fade-in duration-200">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>{uploadSuccess}</span>
             </div>
           )}
 
           {uploadError && (
             <div className="p-2.5 rounded bg-rose-950/40 border border-rose-900/60 text-xs text-rose-300 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{uploadError}</span>
             </div>
           )}
 
-          {/* Staged Documents (New Inquest Mode) */}
-          {!taskId && stagedFiles.length > 0 && (
+          {/* Staged Documents (New Conversation Mode) */}
+          {!activeId && stagedFiles.length > 0 && (
             <div className="space-y-2 pt-2">
               <div className="text-[11px] font-mono uppercase text-slate-400 tracking-wider flex items-center justify-between">
                 <span>Staged Documents ({stagedFiles.length})</span>
                 <span className="text-[10px] text-[#D4A373] lowercase">
-                  will be vectorized upon submit
+                  will upload upon sending message
                 </span>
               </div>
               <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
@@ -230,7 +293,7 @@ export function DocumentUploadModal({
                     className="p-2.5 rounded bg-[#13161D] border border-[#1C202A] flex items-center justify-between gap-3 text-xs"
                   >
                     <div className="flex items-center gap-2.5 overflow-hidden">
-                      <FileText className="w-4 h-4 text-[#D4A373] flex-shrink-0" />
+                      <FileText className="w-4 h-4 text-[#D4A373] shrink-0" />
                       <div className="overflow-hidden">
                         <div className="font-medium text-[#F8FAFC] truncate">
                           {file.name}
@@ -241,9 +304,9 @@ export function DocumentUploadModal({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-2 shrink-0">
                       <span className="inline-flex items-center gap-1 text-[10px] font-mono text-[#D4A373] bg-[#D4A373]/10 px-2 py-0.5 rounded-full border border-[#D4A373]/20 font-medium">
-                        Staged for Inquest
+                        Staged
                       </span>
                       {onRemoveStagedFile && (
                         <button
@@ -262,64 +325,73 @@ export function DocumentUploadModal({
             </div>
           )}
 
-          {/* Live Ingested Documents List (Active Inquest Mode) */}
-          {taskId && documents.length > 0 && (
+          {/* Uploaded Documents List */}
+          {activeId && documents.length > 0 && (
             <div className="space-y-2 pt-2">
               <div className="text-[11px] font-mono uppercase text-slate-400 tracking-wider flex items-center justify-between">
-                <span>Ingested Documents ({documents.length})</span>
+                <span>Conversation Documents ({documents.length})</span>
                 <span className="text-[10px] text-emerald-400 lowercase">
-                  {documents.filter((d) => d.processingStatus === "READY" || d.processingStatus === "COMPLETED").length} ready for RAG
+                  {documents.filter((d) => d.processingStatus === "READY" || d.processingStatus === "COMPLETED").length} ready
                 </span>
               </div>
-              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+              <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
                 {documents.map((doc) => {
+                  const isSelected = selectedDocumentIds.includes(doc.id);
+                  const statusInfo = getStatusLabel(doc.processingStatus);
                   const isReady =
                     doc.processingStatus === "READY" ||
                     doc.processingStatus === "COMPLETED";
-                  const isProcessing =
-                    doc.processingStatus === "PROCESSING" ||
-                    doc.processingStatus === "UPLOADED" ||
-                    doc.processingStatus === "PENDING";
 
                   return (
                     <div
                       key={doc.id}
-                      className="p-2.5 rounded bg-[#13161D] border border-[#1C202A] flex items-center justify-between gap-3 text-xs"
+                      onClick={() => onToggleSelectDocument?.(doc.id)}
+                      className={`p-2.5 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-3 text-xs ${
+                        isSelected
+                          ? "bg-[#161B26] border-[#D4A373]/50 text-[#F8FAFC]"
+                          : "bg-[#13161D] border-[#1C202A] hover:border-[#1C202A]/80 text-slate-300"
+                      }`}
                     >
                       <div className="flex items-center gap-2.5 overflow-hidden">
-                        <FileText className="w-4 h-4 text-[#D4A373] flex-shrink-0" />
+                        <div
+                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                            isSelected
+                              ? "bg-[#D4A373] border-[#D4A373] text-[#0A0C10]"
+                              : "border-[#2A3140] bg-[#11141C]"
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
+                        <FileText className="w-4 h-4 text-[#D4A373] shrink-0" />
                         <div className="overflow-hidden">
                           <div className="font-medium text-[#F8FAFC] truncate">
-                            {doc.fileName}
+                            {doc.fileName || doc.filename}
                           </div>
                           <div className="text-[10px] font-mono text-slate-400">
-                            {(doc.fileSizeBytes / 1024).toFixed(1)} KB · SHA-256:{" "}
-                            {doc.checksumSha256?.slice(0, 8)}...
+                            {(doc.fileSizeBytes / 1024).toFixed(1)} KB
+                            {doc.checksumSha256 ? ` · ${doc.checksumSha256.slice(0, 8)}` : ""}
                           </div>
+                          {doc.processingError && (
+                            <div className="text-[10px] font-mono text-rose-400 truncate mt-0.5">
+                              Error: {doc.processingError}
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {isReady ? (
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-medium">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            Indexed &amp; Ready
-                          </span>
-                        ) : isProcessing ? (
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-[#D4A373] bg-[#D4A373]/10 px-2 py-0.5 rounded-full border border-[#D4A373]/20 animate-pulse font-medium">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            Indexing Chunks...
-                          </span>
-                        ) : doc.processingStatus === "FAILED" ? (
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">
-                            <AlertCircle className="w-3.5 h-3.5" />
-                            Failed
-                          </span>
-                        ) : (
-                          <span className="text-[11px] font-mono text-slate-400">
-                            Queued
-                          </span>
-                        )}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span
+                          className={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full border ${statusInfo.color}`}
+                        >
+                          {isReady ? (
+                            <CheckCircle2 className="w-3 h-3" />
+                          ) : doc.processingStatus === "FAILED" ? (
+                            <AlertCircle className="w-3 h-3" />
+                          ) : (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          )}
+                          {statusInfo.label}
+                        </span>
                       </div>
                     </div>
                   );
@@ -330,10 +402,15 @@ export function DocumentUploadModal({
         </div>
 
         {/* Modal Footer */}
-        <div className="p-3 border-t border-[#1C202A] bg-[#090A0D] flex justify-end">
+        <div className="p-3 border-t border-[#1C202A] bg-[#090A0D] flex items-center justify-between">
+          <div className="text-[11px] font-mono text-slate-400">
+            {selectedDocumentIds.length > 0
+              ? `${selectedDocumentIds.length} document(s) selected for current inquiry`
+              : "Click a document to select it for your next inquiry"}
+          </div>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded text-xs font-medium bg-white/5 hover:bg-white/10 text-white transition-colors"
+            className="px-4 py-1.5 rounded-lg text-xs font-medium bg-[#F8FAFC] hover:bg-white text-[#0A0C10] font-mono transition-colors cursor-pointer"
           >
             Done
           </button>
