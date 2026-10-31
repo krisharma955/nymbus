@@ -67,6 +67,7 @@ public class WorkflowService {
     private final AgentMessageService agentMessageService;
     private final com.graviton.nymbus.document.service.DocumentService documentService;
     private final com.graviton.nymbus.document.repository.DocumentChunkRepository documentChunkRepository;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @Value("${nymbus.workflow.max-retries:2}")
     private int maxRetries;
@@ -253,7 +254,8 @@ public class WorkflowService {
         // RAG: Retrieve relevant private document chunks for the subtask query
         List<com.graviton.nymbus.document.entity.DocumentChunk> taskChunks = Collections.emptyList();
         try {
-            taskChunks = documentService.searchTaskChunks(taskId, claim.subTaskTitle(), 3);
+            String subTaskQuery = claim.subTaskTitle() + " " + (claim.subTaskDescription() != null ? claim.subTaskDescription() : "");
+            taskChunks = documentService.searchTaskChunks(taskId, subTaskQuery.trim(), 8);
         } catch (Exception e) {
             log.debug("Document chunk search returned no results or failed: {}", e.getMessage());
         }
@@ -703,6 +705,13 @@ public class WorkflowService {
 
         workflowEventService.completeStream(taskId);
 
+        eventPublisher.publishEvent(new com.graviton.nymbus.research.event.ResearchTaskCompletedEvent(
+                taskId,
+                report.getId(),
+                report.getTitle(),
+                report.getExecutiveSummary()
+        ));
+
         log.info("Task {} successfully COMPLETED with report version {}", taskId, nextVersion);
     }
 
@@ -721,6 +730,9 @@ public class WorkflowService {
                     Map.of("reason", reason)
             );
             workflowEventService.completeStream(taskId);
+
+            eventPublisher.publishEvent(new com.graviton.nymbus.research.event.ResearchTaskFailedEvent(taskId, reason));
+
             log.warn("Task {} marked FAILED: {}", taskId, reason);
         });
     }

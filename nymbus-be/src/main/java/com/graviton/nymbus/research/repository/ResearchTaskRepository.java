@@ -21,6 +21,11 @@ public interface ResearchTaskRepository extends JpaRepository<ResearchTask, UUID
 
     Optional<ResearchTask> findByIdAndUserId(UUID id, UUID userId);
 
+    java.util.List<ResearchTask> findByConversationIdOrderByCreatedAtDesc(UUID conversationId);
+
+    Optional<ResearchTask> findFirstByConversationIdAndStatusInOrderByCreatedAtDesc(
+            UUID conversationId, java.util.Collection<TaskStatus> statuses);
+
     @Modifying
     @Query("UPDATE ResearchTask t SET t.status = :targetStatus, t.startedAt = :now " +
            "WHERE t.id = :taskId AND t.status = :expectedStatus")

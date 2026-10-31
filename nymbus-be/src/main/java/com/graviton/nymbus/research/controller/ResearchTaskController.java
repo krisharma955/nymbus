@@ -4,6 +4,7 @@ import com.graviton.nymbus.agent.dto.ExecutionResponse;
 import com.graviton.nymbus.evidence.dto.EvidenceResponse;
 import com.graviton.nymbus.report.dto.ReportResponse;
 import com.graviton.nymbus.research.dto.CreateTaskRequest;
+import com.graviton.nymbus.research.dto.ResearchTaskStatusResponse;
 import com.graviton.nymbus.research.dto.TaskResponse;
 import com.graviton.nymbus.research.service.ResearchTaskService;
 import com.graviton.nymbus.source.dto.SourceResponse;
@@ -46,6 +47,12 @@ public class ResearchTaskController {
     public ResponseEntity<TaskResponse> getTask(@PathVariable UUID taskId) {
         TaskResponse task = researchTaskService.getTask(taskId);
         return ResponseEntity.ok(task);
+    }
+
+    @GetMapping("/{taskId}/status")
+    public ResponseEntity<ResearchTaskStatusResponse> getTaskStatus(@PathVariable UUID taskId) {
+        ResearchTaskStatusResponse status = researchTaskService.getTaskStatus(taskId);
+        return ResponseEntity.ok(status);
     }
 
     @PostMapping("/{taskId}/execute")

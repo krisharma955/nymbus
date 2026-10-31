@@ -46,7 +46,7 @@ public class DocumentProcessingService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    @Async
+    @Async("documentExecutor")
     public void processDocumentAsync(UUID documentId) {
         log.info("Starting asynchronous processing for document {}", documentId);
 
@@ -65,7 +65,7 @@ public class DocumentProcessingService {
                     document.getFileName(),
                     document.getContentType(),
                     document.getObjectKey(),
-                    document.getResearchTask().getId()
+                    document.getResearchTask() != null ? document.getResearchTask().getId() : null
             );
         });
 
@@ -127,14 +127,16 @@ public class DocumentProcessingService {
 
             log.info("Document {} successfully processed into {} chunks", documentId, chunksToPersist.size());
 
-            workflowEventService.recordEvent(
-                    docInfo.taskId(),
-                    null,
-                    null,
-                    WorkflowEventType.DOCUMENT_PROCESSED,
-                    "Document processed: " + docInfo.fileName() + " (" + chunksToPersist.size() + " chunks indexed)",
-                    Map.of("documentId", docInfo.id(), "chunksCount", chunksToPersist.size())
-            );
+            if (docInfo.taskId() != null) {
+                workflowEventService.recordEvent(
+                        docInfo.taskId(),
+                        null,
+                        null,
+                        WorkflowEventType.DOCUMENT_PROCESSED,
+                        "Document processed: " + docInfo.fileName() + " (" + chunksToPersist.size() + " chunks indexed)",
+                        Map.of("documentId", docInfo.id(), "chunksCount", chunksToPersist.size())
+                );
+            }
 
         } catch (Exception e) {
             log.error("Failed to process document {}: {}", documentId, e.getMessage(), e);
@@ -155,9 +157,17 @@ public class DocumentProcessingService {
                 || (fileName != null && fileName.toLowerCase().endsWith(".pdf"));
 
         if (isPdf) {
+            // PDF Magic Bytes Validation (%PDF)
+            if (data == null || data.length < 4 || data[0] != 0x25 || data[1] != 0x50 || data[2] != 0x44 || data[3] != 0x46) {
+                throw new IllegalArgumentException("Invalid PDF format: missing '%PDF-' magic header");
+            }
+
             try {
                 PagePdfDocumentReader reader = new PagePdfDocumentReader(new ByteArrayResource(data));
                 List<org.springframework.ai.document.Document> docs = reader.get();
+                if (docs == null || docs.isEmpty()) {
+                    throw new IllegalStateException("PDF document reader extracted zero pages from " + fileName);
+                }
                 for (int i = 0; i < docs.size(); i++) {
                     org.springframework.ai.document.Document doc = docs.get(i);
                     Object pageMeta = doc.getMetadata().get("page_number");
@@ -166,11 +176,12 @@ public class DocumentProcessingService {
                 }
                 return pages;
             } catch (Exception e) {
-                log.warn("PagePdfDocumentReader failed for {}: {}. Falling back to plain text extraction.", fileName, e.getMessage());
+                log.error("PDF extraction failed for {}: {}", fileName, e.getMessage());
+                throw new IllegalStateException("Failed to parse and extract text from PDF: " + e.getMessage(), e);
             }
         }
 
-        // Plain text / Markdown fallback
+        // Plain text / Markdown
         String text = new String(data, java.nio.charset.StandardCharsets.UTF_8);
         pages.add(new ExtractedPage(1, text));
         return pages;

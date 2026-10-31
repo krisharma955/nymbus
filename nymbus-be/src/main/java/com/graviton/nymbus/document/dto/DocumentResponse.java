@@ -9,6 +9,8 @@ import java.util.UUID;
 public record DocumentResponse(
         UUID id,
         UUID researchTaskId,
+        UUID conversationId,
+        UUID messageId,
         String fileName,
         String objectKey,
         String contentType,
@@ -24,6 +26,8 @@ public record DocumentResponse(
         return new DocumentResponse(
                 doc.getId(),
                 doc.getResearchTask() != null ? doc.getResearchTask().getId() : null,
+                doc.getConversationId(),
+                doc.getMessageId(),
                 doc.getFileName(),
                 doc.getObjectKey(),
                 doc.getContentType(),

@@ -11,6 +11,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 @Slf4j
@@ -43,7 +44,12 @@ public class ResearchAgent {
 
         List<String> queries = List.of(subTaskTitle);
         long searchStart = System.currentTimeMillis();
-        List<SearchResult> webResults = webSearchTool.search(subTaskTitle, 4);
+        List<SearchResult> webResults = Collections.emptyList();
+        try {
+            webResults = webSearchTool.search(subTaskTitle, 4);
+        } catch (Exception e) {
+            log.warn("Web search failed in ResearchAgent for '{}': {}. Continuing with available sources.", subTaskTitle, e.getMessage());
+        }
         long searchDuration = System.currentTimeMillis() - searchStart;
 
         List<SearchResult> combinedResults = new ArrayList<>();

@@ -11,7 +11,8 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "documents", indexes = {
-        @Index(name = "ix_docs", columnList = "user_id, research_task_id, processing_status")
+        @Index(name = "ix_docs", columnList = "user_id, research_task_id, processing_status"),
+        @Index(name = "ix_docs_conversation_status", columnList = "conversation_id, processing_status")
 })
 @Getter
 @Setter
@@ -29,8 +30,14 @@ public class Document {
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "research_task_id", nullable = false)
+    @JoinColumn(name = "research_task_id")
     private ResearchTask researchTask;
+
+    @Column(name = "conversation_id")
+    private UUID conversationId;
+
+    @Column(name = "message_id")
+    private UUID messageId;
 
     @Column(name = "file_name", nullable = false, length = 255)
     private String fileName;

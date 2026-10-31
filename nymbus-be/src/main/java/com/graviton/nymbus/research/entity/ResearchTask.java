@@ -46,6 +46,16 @@ public class ResearchTask {
     @Builder.Default
     private ExecutionMode executionMode = ExecutionMode.STANDARD;
 
+    @Column(name = "conversation_id")
+    private UUID conversationId;
+
+    @Column(name = "parent_task_id")
+    private UUID parentTaskId;
+
+    @Column(name = "turn_index", nullable = false)
+    @Builder.Default
+    private int turnIndex = 0;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "plan", columnDefinition = "jsonb")
     private Map<String, Object> plan;
