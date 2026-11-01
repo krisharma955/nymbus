@@ -1,20 +1,58 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
+
 :root {
-  --background: #090A0D;
-  --foreground: #F8FAFC;
-  --accent-gold: #D4A373;
-  --accent-gold-glow: rgba(212, 163, 115, 0.2);
-  --obsidian-surface: #0E1015;
-  --obsidian-card: #13161D;
-  --drafting-border: #1C202A;
-  --drafting-border-subtle: #141720;
+  /* Warm Architectural Vellum (Light Mode) */
+  --background: #FAFAF8;
+  --background-subtle: #F3F4F6;
+  --surface: #FFFFFF;
+  --surface-raised: #FFFFFF;
+  --foreground: #0D1117;
+  --foreground-muted: #57606A;
+  --foreground-subtle: #8C959F;
+  --accent-gold: #B4783E;
+  --accent-gold-glow: rgba(180, 120, 62, 0.16);
+  --accent-gold-subtle: rgba(180, 120, 62, 0.08);
+  --obsidian-surface: #FFFFFF;
+  --obsidian-card: #FFFFFF;
+  --drafting-border: #E1E4EA;
+  --drafting-border-subtle: #ECEEF2;
+  --hairline: rgba(0, 0, 0, 0.08);
+}
+
+.dark, [data-theme="dark"] {
+  /* Precision Obsidian & Luminous Champagne (Dark Mode) */
+  --background: #08090C;
+  --background-subtle: #0D0F14;
+  --surface: #12151D;
+  --surface-raised: #181C26;
+  --foreground: #F6F8FA;
+  --foreground-muted: #9499A8;
+  --foreground-subtle: #636A7E;
+  --accent-gold: #E5B07A;
+  --accent-gold-glow: rgba(229, 176, 122, 0.22);
+  --accent-gold-subtle: rgba(229, 176, 122, 0.12);
+  --obsidian-surface: #12151D;
+  --obsidian-card: #141822;
+  --drafting-border: #1E232F;
+  --drafting-border-subtle: #161922;
   --hairline: rgba(255, 255, 255, 0.07);
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-background-subtle: var(--background-subtle);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
   --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-border-draft: var(--drafting-border);
+  --color-border-subtle: var(--drafting-border-subtle);
+  --color-gold: var(--accent-gold);
+  --color-gold-glow: var(--accent-gold-glow);
+  --color-gold-subtle: var(--accent-gold-subtle);
   --font-sans: var(--font-soft-sans), var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-geist-mono), monospace;
 }
@@ -24,19 +62,26 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
   overflow-x: hidden;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 ::selection {
   background: var(--accent-gold);
-  color: #090A0D;
+  color: #08090C;
 }
 
 /* Drafting Caliper Grid */
 .bg-drafting-grid {
   background-image: 
-    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    linear-gradient(to right, rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
   background-size: 36px 36px;
+}
+
+.dark .bg-drafting-grid, [data-theme="dark"] .bg-drafting-grid {
+  background-image: 
+    linear-gradient(to right, rgba(229, 176, 122, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
 }
 
 /* Custom Minimalist Scrollbar */
@@ -45,17 +90,21 @@ body {
   height: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: #090A0D;
+  background: var(--background);
 }
 ::-webkit-scrollbar-thumb {
-  background: #1C202A;
+  background: var(--drafting-border);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #D4A373;
+  background: var(--accent-gold);
 }
 
 /* Subtle Architectural Dot Grid */
 .bg-foundry-grid {
-  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(0, 0, 0, 0.065) 1px, transparent 1px);
   background-size: 24px 24px;
+}
+
+.dark .bg-foundry-grid, [data-theme="dark"] .bg-foundry-grid {
+  background-image: radial-gradient(rgba(229, 176, 122, 0.09) 1px, transparent 1px);
 }
