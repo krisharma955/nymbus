@@ -101,8 +101,8 @@ export function DocumentUploadModal({
     setUploadError(null);
     setUploadSuccess(null);
 
-    // Filter by allowed file extensions: .pdf, .txt, .md
-    const allowedExtensions = [".pdf", ".txt", ".md"];
+    // Filter by allowed file extensions: .pdf, .txt, .md, .csv, .docx
+    const allowedExtensions = [".pdf", ".txt", ".md", ".csv", ".docx"];
     const invalidFiles = fileList.filter((f) => {
       const name = f.name.toLowerCase();
       return !allowedExtensions.some((ext) => name.endsWith(ext));
@@ -110,7 +110,7 @@ export function DocumentUploadModal({
 
     if (invalidFiles.length > 0) {
       setUploadError(
-        `Unsupported file type(s): ${invalidFiles.map((f) => f.name).join(", ")}. Only PDF, TXT, and Markdown files are supported.`
+        `Unsupported file type(s): ${invalidFiles.map((f) => f.name).join(", ")}. Supported formats: PDF, TXT, Markdown, CSV, and DOCX.`
       );
       return;
     }
@@ -219,7 +219,7 @@ export function DocumentUploadModal({
         {/* Modal Body */}
         <div className="p-5 space-y-4 overflow-y-auto">
           <p className="text-xs text-slate-400 leading-relaxed font-sans">
-            Upload PDF, TXT, or Markdown documents to attach to this conversation. Documents are
+            Upload PDF, TXT, Markdown, CSV, or DOCX documents to attach to this conversation. Documents are
             automatically chunked, embedded, and queried by AI agents for verifiable, grounded answers.
           </p>
 
@@ -241,7 +241,7 @@ export function DocumentUploadModal({
               type="file"
               className="hidden"
               multiple
-              accept=".pdf,.txt,.md"
+              accept=".pdf,.txt,.md,.csv,.docx"
               onChange={handleFileChange}
               disabled={isUploading}
             />
@@ -257,7 +257,7 @@ export function DocumentUploadModal({
                   Click to browse or drag and drop document(s)
                 </span>
                 <span className="text-[11px] font-mono text-slate-400">
-                  Supported formats: PDF, TXT, Markdown (.md)
+                  Supported formats: PDF, TXT, Markdown, CSV, DOCX
                 </span>
               </>
             )}

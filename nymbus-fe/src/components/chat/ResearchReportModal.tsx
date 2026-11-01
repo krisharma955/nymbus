@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import {
   X,
   Download,
@@ -22,6 +22,17 @@ export function ResearchReportModal({
   onClose,
   onCitationClick,
 }: ResearchReportModalProps) {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !report) return null;
 
   return (
@@ -29,8 +40,16 @@ export function ResearchReportModal({
       role="dialog"
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
     >
-      <div className="w-full max-w-5xl h-[92vh] bg-[#0A0C10] border border-[#1C202A] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+      <div
+        className="w-full max-w-5xl h-[92vh] bg-[#0A0C10] border border-[#1C202A] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Top Bar */}
         <div className="h-14 px-6 border-b border-[#1C202A] bg-[#0C0E14] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 overflow-hidden">

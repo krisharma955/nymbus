@@ -18,6 +18,7 @@ import {
   TaskResponse,
   UpdateConversationRequest,
   UserMeResponse,
+  WorkflowEventResponse,
 } from "../types/nymbus";
 import { clearStoredToken, getAuthHeaders } from "./auth";
 
@@ -255,6 +256,10 @@ export const api = {
 
   async getSubTasks(taskId: string): Promise<SubTaskResponse[]> {
     return fetchJson<SubTaskResponse[]>(`/api/research-tasks/${taskId}/subtasks`);
+  },
+
+  async getWorkflowEvents(taskId: string): Promise<WorkflowEventResponse[]> {
+    return fetchJson<WorkflowEventResponse[]>(`/api/research-tasks/${taskId}/events`);
   },
 
   async getExecutions(taskId: string): Promise<ExecutionResponse[]> {

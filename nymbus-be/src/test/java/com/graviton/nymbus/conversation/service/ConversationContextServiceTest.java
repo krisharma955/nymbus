@@ -107,6 +107,105 @@ class ConversationContextServiceTest {
     }
 
     @Test
+    void buildContextualSearchQuery_FusionEnergyThenAutonomousRockets_KeepsAutonomousRocketsStandalone() {
+        ConversationMessage prevUserMsg = ConversationMessage.builder()
+                .role(MessageRole.USER)
+                .content("What are the latest verified technical milestones in Commonwealth Fusion Systems?")
+                .build();
+
+        String query = conversationContextService.buildContextualSearchQuery(
+                "Explain autonomous rockets", List.of(prevUserMsg));
+
+        assertEquals("Explain autonomous rockets", query);
+        assertFalse(query.toLowerCase().contains("fusion"));
+    }
+
+    @Test
+    void buildContextualSearchQuery_RedisThenHowDoesItWork_CreatesContextualQuery() {
+        ConversationMessage prevUserMsg = ConversationMessage.builder()
+                .role(MessageRole.USER)
+                .content("Tell me about Redis cache architecture")
+                .build();
+
+        String query = conversationContextService.buildContextualSearchQuery(
+                "How does it work?", List.of(prevUserMsg));
+
+        assertTrue(query.toLowerCase().contains("redis"));
+        assertTrue(query.toLowerCase().contains("how does it work"));
+    }
+
+    @Test
+    void buildContextualSearchQuery_JavaThenWhatAboutItsPerformance_CreatesContextualQuery() {
+        ConversationMessage prevUserMsg = ConversationMessage.builder()
+                .role(MessageRole.USER)
+                .content("Is Java good for high-throughput backends?")
+                .build();
+
+        String query = conversationContextService.buildContextualSearchQuery(
+                "What about its performance?", List.of(prevUserMsg));
+
+        assertTrue(query.toLowerCase().contains("java"));
+        assertTrue(query.toLowerCase().contains("performance"));
+    }
+
+    @Test
+    void buildContextualSearchQuery_QuantumComputingThenLatestAiBreakthroughs_KeepsStandalone() {
+        ConversationMessage prevUserMsg = ConversationMessage.builder()
+                .role(MessageRole.USER)
+                .content("Summarize quantum computing algorithms")
+                .build();
+
+        String query = conversationContextService.buildContextualSearchQuery(
+                "Latest AI breakthroughs", List.of(prevUserMsg));
+
+        assertEquals("Latest AI breakthroughs", query);
+        assertFalse(query.toLowerCase().contains("quantum"));
+    }
+
+    @Test
+    void buildContextualSearchQuery_PostgreSqlAnswerThenCompareItWithMySql_CreatesContextualQuery() {
+        ConversationMessage prevAssistantMsg = ConversationMessage.builder()
+                .role(MessageRole.ASSISTANT)
+                .content("PostgreSQL is an advanced, open-source object-relational database system.")
+                .build();
+
+        String query = conversationContextService.buildContextualSearchQuery(
+                "Compare it with MySQL", List.of(prevAssistantMsg));
+
+        assertTrue(query.toLowerCase().contains("postgresql"));
+        assertTrue(query.toLowerCase().contains("mysql"));
+    }
+
+    @Test
+    void buildContextualSearchQuery_PreviousMessageThenWhatIsKafka_KeepsKafkaStandalone() {
+        ConversationMessage prevUserMsg = ConversationMessage.builder()
+                .role(MessageRole.USER)
+                .content("Can you explain how distributed ledger technology works?")
+                .build();
+
+        String query = conversationContextService.buildContextualSearchQuery(
+                "What is Kafka?", List.of(prevUserMsg));
+
+        assertEquals("What is Kafka?", query);
+        assertFalse(query.toLowerCase().contains("ledger"));
+    }
+
+    @Test
+    void assembleContext_ZeroSearchResultsDoesNotMarkFailed() {
+        when(conversationMessageService.getRecentMessages(eq(conversationId), anyInt()))
+                .thenReturn(Collections.emptyList());
+        when(webSearchTool.search(anyString(), anyInt()))
+                .thenReturn(Collections.emptyList());
+
+        ConversationContextService.AssembledContext context = conversationContextService.assembleContext(
+                conversation, "What is Kafka?", Collections.emptyList());
+
+        assertNotNull(context);
+        assertFalse(context.webSearchFailed());
+        assertTrue(context.webResults().isEmpty());
+    }
+
+    @Test
     void assembleContext_PopulatesWebResultsAndSummary() {
         when(conversationMessageService.getRecentMessages(eq(conversationId), anyInt()))
                 .thenReturn(Collections.emptyList());

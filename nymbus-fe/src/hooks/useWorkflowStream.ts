@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { WorkflowEventResponse, WorkflowEventType } from "../types/nymbus";
+import { SseStreamParser } from "../lib/sseParser";
+import { getAuthHeaders } from "../lib/auth";
+import { api } from "../lib/api";
 
 interface StreamPayload {
   id?: string;
@@ -10,25 +13,6 @@ interface StreamPayload {
   timestamp?: string;
   metadata?: Record<string, unknown>;
 }
-
-const ALL_EVENT_TYPES: WorkflowEventType[] = [
-  "TASK_STARTED",
-  "PLAN_CREATED",
-  "SUBTASK_STARTED",
-  "SUBTASK_COMPLETED",
-  "SOURCE_FOUND",
-  "CLAIM_EXTRACTED",
-  "CLAIM_VERIFIED",
-  "CLAIM_REJECTED",
-  "RE_RESEARCH_TRIGGERED",
-  "ANALYSIS_COMPLETED",
-  "REPORT_GENERATED",
-  "DOCUMENT_UPLOADED",
-  "DOCUMENT_PROCESSED",
-  "TASK_COMPLETED",
-  "TASK_FAILED",
-  "RETRY_SCHEDULED",
-];
 
 interface UseWorkflowStreamProps {
   taskId: string | null;
@@ -51,10 +35,9 @@ export function useWorkflowStream({
   const [lastEvent, setLastEvent] = useState<WorkflowEventResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const lastEventIdRef = useRef<string | null>(null);
 
-  // Keep latest callbacks in refs so connect doesn't recreate when parent re-renders
   const onEventRef = useRef(onEvent);
   const onCompletedRef = useRef(onCompleted);
   const onFailedRef = useRef(onFailed);
@@ -66,40 +49,70 @@ export function useWorkflowStream({
   });
 
   const cleanup = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
     setIsConnected(false);
     setIsStreaming(false);
   }, []);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!taskId || !enabled) return;
 
     cleanup();
-    setEvents([]);
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    setIsStreaming(true);
+    setError(null);
+
+    // Initial fetch of existing events in case stream is fast or already completed
+    try {
+      const pastEvents = await api.getWorkflowEvents(taskId);
+      if (!abortController.signal.aborted && pastEvents && pastEvents.length > 0) {
+        setEvents(pastEvents);
+        setLastEvent(pastEvents[pastEvents.length - 1]);
+        if (pastEvents[pastEvents.length - 1].id) {
+          lastEventIdRef.current = pastEvents[pastEvents.length - 1].id;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    if (abortController.signal.aborted) return;
 
     const url = new URL(`/api/research-tasks/${taskId}/stream`, window.location.origin);
     if (lastEventIdRef.current) {
       url.searchParams.set("lastEventId", lastEventIdRef.current);
     }
 
-    const es = new EventSource(url.toString());
-    eventSourceRef.current = es;
-    setIsStreaming(true);
-    setError(null);
+    const parser = new SseStreamParser((parsedEvent) => {
+      if (parsedEvent.event === "CONNECTED") {
+        setIsConnected(true);
+        setError(null);
+        return;
+      }
 
-    const handlePayload = (eventType: WorkflowEventType, dataText: string, eventId?: string) => {
       try {
-        const parsed = JSON.parse(dataText) as StreamPayload;
+        let payload: StreamPayload = {};
+        try {
+          payload = JSON.parse(parsedEvent.data) as StreamPayload;
+        } catch {
+          payload = { message: parsedEvent.data };
+        }
+
+        const eventType = (payload.eventType || parsedEvent.event || "TASK_STARTED") as WorkflowEventType;
         const normalized: WorkflowEventResponse = {
-          id: parsed.id || eventId || crypto.randomUUID(),
+          id: payload.id || parsedEvent.id || crypto.randomUUID(),
           researchTaskId: taskId,
+          subTaskId: (payload.metadata?.subTaskId as string) || undefined,
           eventType,
-          message: parsed.message || "",
-          metadata: parsed.metadata || {},
-          createdAt: parsed.timestamp || new Date().toISOString(),
+          message: payload.message || "",
+          metadata: payload.metadata || {},
+          createdAt: payload.timestamp || new Date().toISOString(),
         };
 
         if (normalized.id) {
@@ -107,56 +120,66 @@ export function useWorkflowStream({
         }
 
         setLastEvent(normalized);
-        setEvents((prev) => [...prev, normalized]);
+        setEvents((prev) => {
+          if (prev.some((e) => e.id === normalized.id)) return prev;
+          return [...prev, normalized];
+        });
         onEventRef.current?.(normalized);
 
         if (eventType === "TASK_COMPLETED") {
           onCompletedRef.current?.();
-          cleanup();
         } else if (eventType === "TASK_FAILED") {
           onFailedRef.current?.(normalized.message);
-          cleanup();
         }
       } catch (err) {
-        console.warn("Failed to parse SSE payload:", err, dataText);
+        console.warn("Failed to parse SSE payload:", err, parsedEvent.data);
       }
-    };
-
-    es.addEventListener("CONNECTED", () => {
-      setIsConnected(true);
-      setError(null);
     });
 
-    ALL_EVENT_TYPES.forEach((type) => {
-      es.addEventListener(type, (evt: MessageEvent) => {
-        handlePayload(type, evt.data, evt.lastEventId);
+    try {
+      const authHeaders = getAuthHeaders();
+      const res = await fetch(url.toString(), {
+        method: "GET",
+        headers: {
+          Accept: "text/event-stream",
+          ...authHeaders,
+        },
+        signal: abortController.signal,
       });
-    });
 
-    es.onmessage = (evt: MessageEvent) => {
-      try {
-        const parsed = JSON.parse(evt.data) as StreamPayload;
-        const type = parsed.eventType || "TASK_STARTED";
-        handlePayload(type, evt.data, evt.lastEventId);
-      } catch {
-        // raw string
+      if (!res.ok) {
+        throw new Error(`Workflow stream failed with status ${res.status}`);
       }
-    };
 
-    es.onerror = () => {
-      // EventSource tries reconnecting automatically; if state is closed, mark dead
-      if (es.readyState === EventSource.CLOSED) {
+      if (!res.body) {
+        throw new Error("No response body available for workflow stream");
+      }
+
+      setIsConnected(true);
+      const reader = res.body.getReader();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          parser.feed(value);
+        }
+      }
+      parser.finish();
+    } catch (err: unknown) {
+      if (abortController.signal.aborted) return;
+      console.warn("Workflow SSE stream error:", err);
+      setError(err instanceof Error ? err.message : "Stream error");
+    } finally {
+      if (!abortController.signal.aborted) {
         setIsConnected(false);
         setIsStreaming(false);
-      } else {
-        setIsConnected(false);
       }
-    };
+    }
   }, [taskId, enabled, cleanup]);
 
   useEffect(() => {
     if (taskId && enabled) {
-      lastEventIdRef.current = null;
       connect();
     } else {
       cleanup();

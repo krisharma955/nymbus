@@ -32,10 +32,15 @@ import java.util.*;
 @Service
 public class DocumentService {
 
-    private static final Set<String> ALLOWED_MIME_TYPES = Set.of(
+    public static final Set<String> ALLOWED_MIME_TYPES = Set.of(
             "application/pdf",
             "text/plain",
-            "text/markdown"
+            "text/markdown",
+            "text/csv",
+            "application/csv",
+            "application/vnd.ms-excel",
+            "text/comma-separated-values",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     );
 
     private final DocumentRepository documentRepository;
@@ -91,24 +96,8 @@ public class DocumentService {
         }
 
         String rawContentType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
-        String normalizedContentType = rawContentType.split(";")[0].trim().toLowerCase();
-
-        // Also check by file extension if client didn't supply specific mime
         String originalName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "document.pdf";
-        String lowerName = originalName.toLowerCase();
-        if ("application/octet-stream".equals(normalizedContentType)) {
-            if (lowerName.endsWith(".pdf")) {
-                normalizedContentType = "application/pdf";
-            } else if (lowerName.endsWith(".txt")) {
-                normalizedContentType = "text/plain";
-            } else if (lowerName.endsWith(".md")) {
-                normalizedContentType = "text/markdown";
-            }
-        }
-
-        if (!ALLOWED_MIME_TYPES.contains(normalizedContentType)) {
-            throw new IllegalArgumentException("Unsupported file type: " + rawContentType + ". Allowed types: application/pdf, text/plain, text/markdown");
-        }
+        String normalizedContentType = determineAndValidateContentType(rawContentType, originalName);
 
         try {
             byte[] fileBytes = file.getBytes();
@@ -211,23 +200,8 @@ public class DocumentService {
         }
 
         String rawContentType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
-        String normalizedContentType = rawContentType.split(";")[0].trim().toLowerCase();
-
         String originalName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "document.pdf";
-        String lowerName = originalName.toLowerCase();
-        if ("application/octet-stream".equals(normalizedContentType)) {
-            if (lowerName.endsWith(".pdf")) {
-                normalizedContentType = "application/pdf";
-            } else if (lowerName.endsWith(".txt")) {
-                normalizedContentType = "text/plain";
-            } else if (lowerName.endsWith(".md")) {
-                normalizedContentType = "text/markdown";
-            }
-        }
-
-        if (!ALLOWED_MIME_TYPES.contains(normalizedContentType)) {
-            throw new IllegalArgumentException("Unsupported file type: " + rawContentType + ". Allowed types: application/pdf, text/plain, text/markdown");
-        }
+        String normalizedContentType = determineAndValidateContentType(rawContentType, originalName);
 
         try {
             byte[] fileBytes = file.getBytes();
@@ -378,5 +352,40 @@ public class DocumentService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    public String determineAndValidateContentType(String rawContentType, String originalName) {
+        String normalized = rawContentType != null ? rawContentType.split(";")[0].trim().toLowerCase(Locale.ROOT) : "";
+        String lowerName = originalName != null ? originalName.toLowerCase(Locale.ROOT) : "";
+
+        // Check file extension first or normalize octet-stream / generic types
+        if (lowerName.endsWith(".pdf")) {
+            return "application/pdf";
+        } else if (lowerName.endsWith(".csv")) {
+            return "text/csv";
+        } else if (lowerName.endsWith(".docx")) {
+            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        } else if (lowerName.endsWith(".txt")) {
+            return "text/plain";
+        } else if (lowerName.endsWith(".md")) {
+            return "text/markdown";
+        }
+
+        // If extension wasn't recognized, check normalized MIME type
+        if ("application/pdf".equals(normalized)) {
+            return "application/pdf";
+        } else if ("text/csv".equals(normalized) || "application/csv".equals(normalized)
+                || "application/vnd.ms-excel".equals(normalized) || "text/comma-separated-values".equals(normalized)) {
+            return "text/csv";
+        } else if ("application/vnd.openxmlformats-officedocument.wordprocessingml.document".equals(normalized)
+                || "application/x-tika-ooxml".equals(normalized)) {
+            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        } else if ("text/plain".equals(normalized)) {
+            return "text/plain";
+        } else if ("text/markdown".equals(normalized)) {
+            return "text/markdown";
+        }
+
+        throw new IllegalArgumentException("Unsupported file type: " + rawContentType + " (" + originalName + "). Allowed types: application/pdf, text/plain, text/markdown, text/csv, application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     }
 }

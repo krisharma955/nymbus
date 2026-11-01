@@ -94,6 +94,7 @@ public class ConversationChatService {
             // Case A: Normal chat
             Map<String, Object> assistantMeta = new HashMap<>();
             assistantMeta.put("citations", chatResponse.citations());
+            assistantMeta.put("fallback", chatResponse.isFallback());
 
             ConversationMessage assistantMsg = conversationMessageService.saveAssistantMessage(
                     conversationId,
@@ -112,6 +113,7 @@ public class ConversationChatService {
             // Documents still ingesting
             Map<String, Object> assistantMeta = new HashMap<>();
             assistantMeta.put("citations", chatResponse.citations());
+            assistantMeta.put("fallback", chatResponse.isFallback());
             Map<String, Object> researchMeta = new HashMap<>();
             researchMeta.put("status", "QUEUED");
             researchMeta.put("note", "Documents are still being processed. Research will initiate automatically upon ingestion completion.");
@@ -138,6 +140,7 @@ public class ConversationChatService {
 
         Map<String, Object> assistantMeta = new HashMap<>();
         assistantMeta.put("citations", chatResponse.citations());
+        assistantMeta.put("fallback", chatResponse.isFallback());
         Map<String, Object> researchMeta = new HashMap<>();
         researchMeta.put("taskId", task.getId().toString());
         researchMeta.put("status", "RESEARCHING");
@@ -245,6 +248,7 @@ public class ConversationChatService {
                 if (!hasDocs && !isExplicitDeep) {
                     Map<String, Object> assistantMeta = new HashMap<>();
                     assistantMeta.put("citations", chatResponse.citations());
+                    assistantMeta.put("fallback", chatResponse.isFallback());
 
                     ConversationMessage assistantMsg = conversationMessageService.saveAssistantMessage(
                             conversationId,
@@ -267,6 +271,7 @@ public class ConversationChatService {
                 if (hasDocs && !docsReady) {
                     Map<String, Object> assistantMeta = new HashMap<>();
                     assistantMeta.put("citations", chatResponse.citations());
+                    assistantMeta.put("fallback", chatResponse.isFallback());
                     Map<String, Object> researchMeta = new HashMap<>();
                     researchMeta.put("status", "QUEUED");
                     researchMeta.put("note", "Documents are still being processed. Research will initiate automatically upon ingestion completion.");

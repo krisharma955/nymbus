@@ -61,6 +61,20 @@ export function EvidenceDrawer({
     };
   }, [evidenceId]);
 
+  useEffect(() => {
+    if (!evidenceId) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [evidenceId, onClose]);
+
   if (!evidenceId) return null;
 
   const claim = detail?.evidence?.claim || cachedCitation?.claim || "Evidence Claim";
@@ -82,13 +96,21 @@ export function EvidenceDrawer({
   const isVerified = status === "VERIFIED";
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-y-0 right-0 w-full sm:w-[480px] bg-[#0E1015] border-l border-[#1C202A] shadow-2xl z-50 flex flex-col backdrop-blur-xl animate-in slide-in-from-right duration-200"
-    >
-      {/* Drawer Header */}
-      <div className="flex items-center justify-between p-4 border-b border-[#1C202A] bg-[#090A0D]/70">
+    <>
+      {/* Backdrop for Evidence Drawer (sits over any open modal/content) */}
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-[65] animate-in fade-in duration-150 cursor-pointer"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="fixed inset-y-0 right-0 w-full sm:w-[500px] bg-[#0E1015] border-l border-[#1C202A] shadow-2xl z-[70] flex flex-col backdrop-blur-xl animate-in slide-in-from-right duration-200"
+      >
+        {/* Drawer Header */}
+        <div className="flex items-center justify-between p-4 border-b border-[#1C202A] bg-[#090A0D]/70">
         <div className="flex items-center gap-2">
           <Scale className="w-4 h-4 text-[#D4A373]" />
           <span className="text-xs uppercase tracking-wider font-mono text-[#D4A373]">
@@ -251,5 +273,6 @@ export function EvidenceDrawer({
         )}
       </div>
     </div>
+    </>
   );
 }

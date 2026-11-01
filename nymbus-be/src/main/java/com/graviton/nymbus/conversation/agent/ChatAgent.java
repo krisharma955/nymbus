@@ -171,15 +171,16 @@ public class ChatAgent {
                     }
                 }
 
-                return new ChatAgentResponse(resultDto.answerMarkdown(), resolvedCitations);
+                return new ChatAgentResponse(resultDto.answerMarkdown(), resolvedCitations, false);
             }
         } catch (Exception e) {
-            log.warn("ChatAgent LLM call failed: {}. Falling back to deterministic contextual response.", e.getMessage());
+            log.error("ChatAgent LLM invocation failed for question '{}'. Error: {}. Cause: {}",
+                    currentQuestion, e.getMessage(), e.getCause() != null ? e.getCause().getMessage() : "none", e);
         }
 
         // Fallback
         String fallbackAnswer = generateFallbackAnswer(currentQuestion, webResults, documentChunks, webSearchFailed);
-        return new ChatAgentResponse(fallbackAnswer, new ArrayList<>(availableCitations.values()));
+        return new ChatAgentResponse(fallbackAnswer, new ArrayList<>(availableCitations.values()), true);
     }
 
     private String generateFallbackAnswer(
@@ -189,6 +190,7 @@ public class ChatAgent {
             boolean webSearchFailed
     ) {
         StringBuilder sb = new StringBuilder();
+        sb.append("> ℹ️ *Note: AI conversational synthesis was temporarily unavailable. Displaying gathered research context for your inquiry.*\n\n");
         sb.append("Here is the relevant information gathered regarding your inquiry: **").append(question).append("**\n\n");
 
         if (webSearchFailed) {

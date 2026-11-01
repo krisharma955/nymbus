@@ -158,6 +158,7 @@ function ChatWorkspaceContent() {
   // --------------------------------------------------------------------------
   const {
     messages,
+    setMessages,
     isLoadingHistory,
     isStreaming,
     isDocumentProcessing,
@@ -191,15 +192,84 @@ function ChatWorkspaceContent() {
     taskId: activeResearchTaskId,
     enabled: Boolean(activeConversation?.id && activeResearchTaskId),
     pollIntervalMs: 3000,
+    onStatusChange: (taskStatus) => {
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (
+            msg.researchTaskId === taskStatus.taskId ||
+            msg.metadata?.research?.taskId === taskStatus.taskId
+          ) {
+            return {
+              ...msg,
+              status: taskStatus.status === "COMPLETED" ? "COMPLETED" : msg.status,
+              metadata: {
+                ...msg.metadata,
+                research: {
+                  ...(msg.metadata?.research || {}),
+                  taskId: taskStatus.taskId,
+                  status: taskStatus.status,
+                  reportId: taskStatus.reportId || msg.metadata?.research?.reportId,
+                },
+              },
+            };
+          }
+          return msg;
+        })
+      );
+    },
     onCompleted: (taskStatus, report) => {
       if (report) {
         setReportsMap((prev) => ({ ...prev, [taskStatus.taskId]: report }));
         setDocNotification(`Research Report ready: "${report.title}"`);
         setTimeout(() => setDocNotification(null), 8000);
       }
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (
+            msg.researchTaskId === taskStatus.taskId ||
+            msg.metadata?.research?.taskId === taskStatus.taskId
+          ) {
+            return {
+              ...msg,
+              status: "COMPLETED",
+              metadata: {
+                ...msg.metadata,
+                research: {
+                  ...(msg.metadata?.research || {}),
+                  taskId: taskStatus.taskId,
+                  status: "COMPLETED",
+                  reportId: taskStatus.reportId || msg.metadata?.research?.reportId,
+                },
+              },
+            };
+          }
+          return msg;
+        })
+      );
     },
-    onFailed: (_taskStatus, errorMsg) => {
+    onFailed: (taskStatus, errorMsg) => {
       setBackendError(`Research task failed: ${errorMsg}`);
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (
+            msg.researchTaskId === taskStatus.taskId ||
+            msg.metadata?.research?.taskId === taskStatus.taskId
+          ) {
+            return {
+              ...msg,
+              metadata: {
+                ...msg.metadata,
+                research: {
+                  ...(msg.metadata?.research || {}),
+                  taskId: taskStatus.taskId,
+                  status: "FAILED",
+                },
+              },
+            };
+          }
+          return msg;
+        })
+      );
     },
   });
 
@@ -957,18 +1027,6 @@ function ChatWorkspaceContent() {
       </main>
 
       {/* ========================================================
-          SLIDE-OUT EVIDENCE & SOURCE PASSAGE DRAWER
-         ======================================================== */}
-      <EvidenceDrawer
-        evidenceId={drawerEvidenceId}
-        cachedCitation={drawerCachedCitation}
-        onClose={() => {
-          setDrawerEvidenceId(null);
-          setDrawerCachedCitation(null);
-        }}
-      />
-
-      {/* ========================================================
           DOCUMENT UPLOAD MODAL (CONVERSATION RAG)
          ======================================================== */}
       <DocumentUploadModal
@@ -1003,6 +1061,19 @@ function ChatWorkspaceContent() {
           setSelectedReportForModal(null);
         }}
         onCitationClick={handleCitationClick}
+      />
+
+      {/* ========================================================
+          SLIDE-OUT EVIDENCE & SOURCE PASSAGE DRAWER
+          (Layered on top of report modal when inspecting citations)
+         ======================================================== */}
+      <EvidenceDrawer
+        evidenceId={drawerEvidenceId}
+        cachedCitation={drawerCachedCitation}
+        onClose={() => {
+          setDrawerEvidenceId(null);
+          setDrawerCachedCitation(null);
+        }}
       />
 
     </div>

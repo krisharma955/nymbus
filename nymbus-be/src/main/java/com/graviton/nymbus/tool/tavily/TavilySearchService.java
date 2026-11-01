@@ -41,6 +41,11 @@ public class TavilySearchService implements WebSearchTool {
 
     @Override
     public List<SearchResult> search(String query, int maxResults) {
+        if (!StringUtils.hasText(query)) {
+            log.debug("Empty query passed to Tavily search; returning empty results without error.");
+            return Collections.emptyList();
+        }
+
         int limit = Math.max(1, Math.min(maxResults, MAX_RESULTS_LIMIT));
 
         Map<String, Object> requestBody = Map.of(
